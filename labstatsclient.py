@@ -9,7 +9,7 @@ import subprocess
 import struct
 import binascii
 import operator
-from daemon import Daemon
+from kombu import BrokerConnection, Producer, Exchange
 
 syslog.openlog("logging")
 #Client settings
@@ -57,16 +57,6 @@ if interval < 1:
     print "Error: Interval must be greater than or equal to 1"
     sys.exit(1)
 # See print statements if debug is on
-if debug == 0:
-
-	class MyDaemon(Daemon):
-		def run(self):
-			while True:
-				time.sleep(1)
-
-	if __name__ == "__main__":
-		daemon = MyDaemon('/tmp/labstatsclient.pid')
-		daemon.start()
 
 # Static probes
 # Set initial unknown values to -1, so we can discard them if they are
@@ -151,6 +141,14 @@ def checksum(string):
 		sum = operator.xor(sum, word)
 	return sum
 
+def checksum_dict(dictionary):
+    sum = 0
+    for k, v in dictionary.items():
+        if k != 'checksum':
+            word = ord(v)
+            sum = operator.xor(sum, word)
+    return sum
+
 #Calculate static probes first
 localhost = socket.getfqdn()
 os = "L"
@@ -222,9 +220,13 @@ if totalcpus == 0:
 
 (idlejiffies, totaljiffies) = getjiffies()
 
-#Network socket for client
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.connect((remotehost, remoteport))
+#Set up AMQP connection
+connection = BrokerConnection(hostname='localhost', port='5672', userid='guest',
+                              password='guest', virtual_host='/')
+channel = connection.channel()
+exchange = Exchange('labstats', type='topic')
+producer = Producer(channel, exchange=exchange, serializer='json')
+
 while 1:
 # Calc timestamp
 	
@@ -293,10 +295,16 @@ while 1:
 	loggedinusers = len(userlist)
 	WHO.close()
 
-	sendstring = map(str,(labstatsversion, timestmp, localhost, os, model, totalmem, totalcommit, totalcpus, usedmem, committedmem, pagefaultspersec, cpupercent, cpuload, loggedinusers, loggedinuserbool))
+        # NEW: send string now a dictionary of the statistics
+        senddict = {'version':labstatsversion, 'timestamp':timestmp, 'hostname':localhost, 'os':os, 'model':model, 'totalmem':totalmem, 'totalcommit':totalcommit, 'totalcpus':totalcpus, 'usedmem':usedmem, 'committedmem':committedmem, 'pagefaultspersec':pagefaultspersec, 'cpupercent':cpupercent, 'cpuload':cpuload, 'loggedinusers':loggedinusers, 'loggedinuserbool':loggedinuserbool}
+        checksum1 = checksum_dict(senddict)
+        senddict['checksum'] = checksum1
+        # Use amqp producer to publish the stats
+        producer.publish(senddict, routing_key='labstats')
+
 	
-	checksum1 = checksum(sendstring)
-	sock.send("0x%04x%s%s\n" %(checksum1,delimiter,sendstring))
+	#checksum1 = checksum(sendstring)
+	#sock.send("0x%04x%s%s\n" %(checksum1,delimiter,sendstring))
 	if debug:
 		print "Labstats Version: ", labstatsversion
 		print "Time: ", timestmp
@@ -315,9 +323,5 @@ while 1:
 		print "User logged in?: ", loggedinuserbool
 
 	time.sleep(interval)
-sock.close()	
 syslog.closelog()
-daemon.stop()
-
-
 

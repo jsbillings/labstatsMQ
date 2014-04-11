@@ -1,0 +1,8 @@
+Description --- This is an alteration of the labstatsclient script using AMQP
+	    	messaging to send statistics to a server. In order to run this 
+		script you need an AMQP Broker running on the local host
+
+Libraries Needed:
+	  python-kombu: AMQP python connection API
+	  python-anyjson: used by kombu for json serialization
+	  python-amqplib: support for kombu API
