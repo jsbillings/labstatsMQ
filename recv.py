@@ -22,10 +22,13 @@ def callback(message_body, message):
     print "CPU Load: ", message_body['cpuload']
     print "Logged in users: ", message_body['loggedinusers']
     print "User logged in?: ", message_body['loggedinuserbool']
+    print "Checksum: ", message_body['checksum']
     message.ack()
 
 consumer.register_callback(callback)
 consumer.consume()
-
-while True:
-    connection.drain_events()
+try:
+    while True:
+        connection.drain_events()
+except KeyboardInterrupt:
+    print

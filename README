@@ -1,6 +1,9 @@
 Description --- This is an alteration of the labstatsclient script using AMQP
 	    	messaging to send statistics to a server. In order to run this 
-		script you need an AMQP Broker running on the local host
+		script you need an AMQP Broker running on the local host. The
+		script sends a dictionary object of statistics to localhost
+		port 5672 (this is the standar AMQP port) and recv.py will
+		print out the results in a formatted manner.
 
 Libraries Needed:
 	  python-kombu: AMQP python connection API

@@ -145,8 +145,9 @@ def checksum_dict(dictionary):
     sum = 0
     for k, v in dictionary.items():
         if k != 'checksum':
-            word = ord(v)
-            sum = operator.xor(sum, word)
+            for c in str(v):
+                word = ord(c)
+                sum = operator.xor(sum, word)
     return sum
 
 #Calculate static probes first
