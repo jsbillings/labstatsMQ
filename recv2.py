@@ -3,8 +3,8 @@ connection = BrokerConnection(hostname='localhost', port='5672', userid='guest',
                               password='guest', virtual_host='/')
 channel = connection.channel()
 exchange = Exchange('labstats', type='topic')
-queue = Queue('labstats', exchange=exchange, routing_key='#', channel=channel)
-consumer = Consumer(channel, queue)
+queue = Queue('hostinfo', exchange, routing_key='#', channel=channel)
+consumer = Consumer(channel=channel, queues=queue)
 
 def callback(message_body, message):
     print "Labstats Version: ", message_body['version']
