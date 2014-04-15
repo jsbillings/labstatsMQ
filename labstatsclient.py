@@ -141,15 +141,6 @@ def checksum(string):
 		sum = operator.xor(sum, word)
 	return sum
 
-def checksum_dict(dictionary):
-    sum = 0
-    for k, v in dictionary.items():
-        if k != 'checksum':
-            for c in str(v):
-                word = ord(c)
-                sum = operator.xor(sum, word)
-    return sum
-
 #Calculate static probes first
 localhost = socket.getfqdn()
 os = "L"
@@ -296,12 +287,19 @@ while 1:
 	loggedinusers = len(userlist)
 	WHO.close()
 
-        # NEW: send string now a dictionary of the statistics
-        senddict = {'version':labstatsversion, 'timestamp':timestmp, 'hostname':localhost, 'os':os, 'model':model, 'totalmem':totalmem, 'totalcommit':totalcommit, 'totalcpus':totalcpus, 'usedmem':usedmem, 'committedmem':committedmem, 'pagefaultspersec':pagefaultspersec, 'cpupercent':cpupercent, 'cpuload':cpuload, 'loggedinusers':loggedinusers, 'loggedinuserbool':loggedinuserbool}
-        checksum1 = checksum_dict(senddict)
-        senddict['checksum'] = checksum1
+        # NEW: now sending a dictionary of the statistics
+        senddict = {'version':labstatsversion, 'timestamp':timestmp, 
+                    'hostname':localhost, 'os':os, 'model':model, 
+                    'totalmem':totalmem, 'totalcommit':totalcommit, 
+                    'totalcpus':totalcpus, 'usedmem':usedmem, 
+                    'committedmem':committedmem, 
+                    'pagefaultspersec':pagefaultspersec, 
+                    'cpupercent':cpupercent, 'cpuload':cpuload, 
+                    'loggedinusers':loggedinusers, 
+                    'loggedinuserbool':loggedinuserbool}
         # Use amqp producer to publish the stats
-        producer.publish(senddict, routing_key='labstats')
+        routing_key = 'labstats.' + localhost
+        producer.publish(senddict, routing_key=routing_key)
 
 	
 	#checksum1 = checksum(sendstring)
