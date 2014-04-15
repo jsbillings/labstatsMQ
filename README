@@ -5,7 +5,21 @@ Description --- This is an alteration of the labstatsclient script using AMQP
 		port 5672 (this is the standar AMQP port) and recv.py will
 		print out the results in a formatted manner.
 
+labstatsclient.py --- Sends a dictionary object of statistics over AMQP.
+		      In order to organize messages each message is sent with
+		      a routing key of labstats.hostname 
+		      (e.g. labstats.caen-sysstudp04.engin.umich.edu).
+
+recv.py --- Simply prints out all the fields of the message sent followed by 
+	    the routing key used. Uses the routing key 
+	    labstats.#.engin.umich.edu which will receive any message starting
+	    with labstats. and ending with .engin.umich.edu
+
+
 Libraries Needed:
 	  python-kombu: AMQP python connection API
 	  python-anyjson: used by kombu for json serialization
 	  python-amqplib: support for kombu API
+
+For information on the Kombu api vist:
+http://kombu.readthedocs.org/en/latest/index.html
