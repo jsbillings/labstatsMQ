@@ -6,10 +6,8 @@ import syslog
 import socket
 import time
 import subprocess
-import struct
-import binascii
-import operator
-from kombu import BrokerConnection, Producer, Exchange
+import zmq
+import json
 
 syslog.openlog("logging")
 #Client settings
@@ -19,8 +17,8 @@ try:
 except:
     pass
 else:
-    remotehost = os.enviorn["LABSTATSSERVER"]
-remoteport = 1682
+    remotehost = os.environ["LABSTATSSERVER"]
+remoteport = 5555
 try:
     os.environ["LABSTATSPORT"]
 except:
@@ -40,7 +38,7 @@ try:
     opts, args = getopt.getopt(sys.argv[1:], "s:p:di:", ["server=", "port=", "debug", "interval="])
 
 except getopt.GetoptError, err:
-    print "Usage: [--server=labstatserver | -s labstatserver] [--debug | -d] \n"
+    print "Usage: [--server=labstatserver | -s labstatserver] [--debug | -d] [--interval=interval | -i interval] \n"
     sys.exit(1)
 
 for o, a in opts:
@@ -90,10 +88,13 @@ def logmsg (str):
     message = str
     syslog.syslog(str)
     if debug == 1:
+        print "WARN: %s" % str
         syslog.syslog(syslog.LOG_DEBUG, str)
 
 def logerr (str):
     message = str
+    if debug == 1:
+        print "ERROR: %s" % str
     syslog.syslog(syslog.LOG_ERR, str)
 
 
@@ -212,12 +213,14 @@ if totalcpus == 0:
 
 (idlejiffies, totaljiffies) = getjiffies()
 
-#Set up AMQP connection
-connection = BrokerConnection(hostname='localhost', port='5672', userid='guest',
-                              password='guest', virtual_host='/')
-channel = connection.channel()
-exchange = Exchange('labstats', type='topic')
-producer = Producer(channel, exchange=exchange, serializer='json')
+#Set up 0MQ connection
+try:
+    context = zmq.Context()
+    socket = context.socket(zmq.REQ)
+    socket.connect("tcp://%s:%d" % (remotehost,remoteport))
+except Exception as e:
+    logerr("Could not establish 0MQ session: %s" % e)
+    sys.exit(1)
 
 while 1:
 # Calc timestamp
@@ -297,13 +300,10 @@ while 1:
                     'cpupercent':cpupercent, 'cpuload':cpuload, 
                     'loggedinusers':loggedinusers, 
                     'loggedinuserbool':loggedinuserbool}
-        # Use amqp producer to publish the stats
-        routing_key = 'labstats.' + localhost
-        producer.publish(senddict, routing_key=routing_key)
+        socket.send(json.dumps(senddict))
+        response = socket.recv()
+        print "Recieved reply: %s" % response
 
-	
-	#checksum1 = checksum(sendstring)
-	#sock.send("0x%04x%s%s\n" %(checksum1,delimiter,sendstring))
 	if debug:
 		print "Labstats Version: ", labstatsversion
 		print "Time: ", timestmp
