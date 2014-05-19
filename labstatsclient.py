@@ -7,7 +7,6 @@ import socket
 import time
 import subprocess
 import zmq
-import json
 
 syslog.openlog("logging")
 #Client settings
@@ -300,7 +299,7 @@ while 1:
                     'cpupercent':cpupercent, 'cpuload':cpuload, 
                     'loggedinusers':loggedinusers, 
                     'loggedinuserbool':loggedinuserbool}
-        socket.send(json.dumps(senddict))
+        socket.send_json(senddict)
         response = socket.recv()
         print "Recieved reply: %s" % response
 
