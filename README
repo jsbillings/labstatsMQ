@@ -1,25 +1,22 @@
-Description --- This is an alteration of the labstatsclient script using AMQP
-	    	messaging to send statistics to a server. In order to run this 
-		script you need an AMQP Broker running on the local host. The
+Description --- This is an alteration of the labstatsclient script
+	    	using ZeroMQ messaging to send statistics to a server. The
 		script sends a dictionary object of statistics to localhost
-		port 5672 (this is the standar AMQP port) and recv.py will
-		print out the results in a formatted manner.
+		port 5555 and recv.py will print out the results in a
+	    	formatted manner. 
 
-labstatsclient.py --- Sends a dictionary object of statistics over AMQP.
-		      In order to organize messages each message is sent with
-		      a routing key of labstats.hostname 
-		      (e.g. labstats.caen-sysstudp04.engin.umich.edu).
+labstatsclient.py --- Sends a dictionary object of statistics over ZeroMQ.
 
 recv.py --- Simply prints out all the fields of the message sent followed by 
 	    the routing key used. Uses the routing key 
 	    labstats.#.engin.umich.edu which will receive any message starting
 	    with labstats. and ending with .engin.umich.edu
 
+collector.py --- Similar to recv.py, but also uses ZeroMQ's Pub/Sub
+                 model to publish the data received from the labstats
+                 client to any subscribers.  Publishes on port 5556.
+
+labstats-subscriber.py --- Subscribes to the labstats data.
+
 
 Libraries Needed:
-	  python-kombu: AMQP python connection API
-	  python-anyjson: used by kombu for json serialization
-	  python-amqplib: support for kombu API
-
-For information on the Kombu api vist:
-http://kombu.readthedocs.org/en/latest/index.html
+	  python-zmq: ZeroMQ python connection API
