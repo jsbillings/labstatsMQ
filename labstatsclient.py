@@ -1,325 +1,186 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
-import os,sys
-import getopt
-import syslog
+import os
+import argparse
 import socket
 import time
-import subprocess
-import zmq
+from subprocess import Popen, PIPE
 
-syslog.openlog("logging")
-#Client settings
+# TODO: setup logging
+
+#client static settings
 remotehost = 'hwstats.engin.umich.edu'
 try:
-    os.environ["LABSTATSSERVER"]
+	remotehost = os.environ["LABSTATSSERVER"]
 except:
-    pass
-else:
-    remotehost = os.environ["LABSTATSSERVER"]
+	pass
+
 remoteport = 5555
 try:
-    os.environ["LABSTATSPORT"]
+	remoteport = int(os.environ["LABSTATSPORT"])
 except:
-    pass
-else:
-    remotehost = os.enviorn["LABSTATSPORT"]
+	pass
+version = "2.0"
 
-delimiter = "\t"
-interval = 300 #seconds, or 5 minutes
-dmifile = "/var/cache/dmi/dmi.info"
-labstatsversion = "1.0"
-timeformat = "%Y%m%d%H%M%S"
-debug = 0
-timeformat = "%Y%m%d%H%M%S"
-#Get options
-try:
-    opts, args = getopt.getopt(sys.argv[1:], "s:p:di:", ["server=", "port=", "debug", "interval="])
+#add cmdline options
+parser = argparse.ArgumentParser()
+parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
+			help="Sets the remote server that accepts labstats data")
+parser.add_argument("--port", "-p", action="store", type=int, default=remoteport, dest="remoteport",
+			help="Sets the remote port to be used")
+parser.add_argument("--debug", "-d", action="store_true", default=False, dest="debug",
+			help="Turns on debug logging")
+parser.add_argument("--interval","-i", action="store",type=int, default=300, dest="interval", 
+			help="Sets the interval between reporting data")
+options = parser.parse_args()
+del remotehost, remoteport
 
-except getopt.GetoptError, err:
-    print "Usage: [--server=labstatserver | -s labstatserver] [--debug | -d] [--interval=interval | -i interval] \n"
-    sys.exit(1)
+data_dict = {
+        #static entries
+        'version': "2.0",
+        'os': "L",
+        'hostname': None,
+        'model': None,
+        'totalmem': -1,
+        'totalcommit': -1,
+        'totalcpus': -1,
 
-for o, a in opts:
-    if o in ("-s", "--server"):
-        remotehost = a
-    elif o in ("-p", "--port"):
-        remoteport = int(a)
-    elif o in ("-d", "--debug"):
-		debug = 1
-    elif o in ("-i", "--interval"):
-        interval =int(a)
+        #dynamic entries
+        'timestamp' : -1,
+        'usedmem': -1,
+        'committedmem': -1, 
+        'pagefaultspersec': -1,
+        'cpupercent': -1,
+        'cpuload': -1,
+        'loggedinusers': -1,
+        'loggedinuserbool': False,
+}
+def static_data():
+	out_dict = {}
+	out_dict['hostname'] = socket.getfqdn()
 
-if interval < 1:
-    print "Error: Interval must be greater than or equal to 1"
-    sys.exit(1)
-# See print statements if debug is on
-
-# Static probes
-# Set initial unknown values to -1, so we can discard them if they are
-# reported somehow
-
-os = "L"
-system = "undefined"
-model = "undefined"
-totalmem = -1
-totalcommit = -1
-totalcpus = -1
-
-# Dynamic probes (to be tested each run)
-
-checksum = -1
-usedmem = -1
-committedmem = -1
-minorpagefaulssinceboot = -1
-majorpagefaultssinceboot = -1
-pagefaultspersec = -1
-idlejiffies = -1
-totaljiffies = -1
-cpucpercent = -1
-cpuload = -1
-loggedinusers = -1
-userlist = []
-uniqueuserlist = []
-loggedinuserbool = -1
-
-def logmsg (str):
-    message = str
-    syslog.syslog(str)
-    if debug == 1:
-        print "WARN: %s" % str
-        syslog.syslog(syslog.LOG_DEBUG, str)
-
-def logerr (str):
-    message = str
-    if debug == 1:
-        print "ERROR: %s" % str
-    syslog.syslog(syslog.LOG_ERR, str)
-
-
-def getpagefaults():
-    min = 0
-    maj = 0
-    try:
-        VMSTAT = open("/proc/vmstat", 'r')
-    except IOError:
-        logerr("Could not open /proc/vmstat")
-    else:
-        for a in VMSTAT:
-			name, value = a.strip().split()	
-			if (name == "pgfault"):
-				min = value
-			if (name == "pgmajfault"):
-				maj = value
-	VMSTAT.close()
-
-    return (float(min), float(maj))
-
-def getjiffies():
-	try:
-		STAT = open("/proc/stat", 'r')
-	except IOError:
-		logerr("Could not open /proc/stat")
-	else:
-		cpupercent = 0
-		for a in STAT:
-			cpuVals = a.split()
-			if cpuVals[0] == "cpu":
-				idle = int(cpuVals[4])
-				total = int(cpuVals[1]) + int(cpuVals[2]) +  int(cpuVals[3]) + int(cpuVals[4]) + int(cpuVals[5]) + int(cpuVals[6]) + int(cpuVals[7]) + int(cpuVals[8]) 
-				break
-		
-		STAT.close()
-	return (idle, total)
-
-#Computes XOR checksum
-def checksum(string):
-
-	sum = 0
-	for i in string:
-		word = ord(i)
-		sum = operator.xor(sum, word)
-	return sum
-
-#Calculate static probes first
-localhost = socket.getfqdn()
-os = "L"
-(minorpagefaultssinceboot, majorpagefaultssinceboot) = getpagefaults()
-
-
-#determine model from DMI information
-try:
-	DMI = open(dmifile, 'r')
-except IOError:
-	logerr("Could not open dmifile")
-else:
-	for a in DMI:
-		sysInfo = a.split("'")
+	dmi = open("/var/cache/dmi/dmi.info", 'r')
+	for line in dmi.readlines():
+		sysInfo = line.split("'")
 		if sysInfo[0] == "SYSTEMMANUFACTURER=":
 			system = sysInfo[1]
-		if sysInfo[0] == "SYSTEMPRODUCTNAME=":
+		elif sysInfo[0] == "SYSTEMPRODUCTNAME=":
 			model = sysInfo[1]
-	DMI.close()
-
-model = system +" " + model
-
-#Make sure system and name are defined
-try:
-	system
-	name
-except NameError:
-	logerr("Could not identify system or model")
-
-#Find memory information
-try:
-	MEMINFO = open("/proc/meminfo", 'r')
-except IOError:
-	logerr("Could not open /proc/meminfo")
-else:
-	for a in MEMINFO:
-		memInfo = a.split()
-		if (memInfo[0] == "MemTotal:"):
-			totalmem = memInfo[1]
-		if (memInfo[0] == "CommitLimit:"):
-			totalcommit = memInfo[1]
-	MEMINFO.close()
-
-#Make sure totalmem and totalcommit are defined
-try:
-	totalmem
-	totalcommit
-except NameError:
-	logerr("Could not identify MemTotal or CommitLimit")
-
-#Find CPU information
-totalcpus = 0
-try:
-	CPUINFO = open("/proc/cpuinfo", 'r')
-except IOError:
-	logerr("Could not open /proc/cpuinfo")
-else:
-	for a in CPUINFO:
-		cpuInfo = a.split(":")
-		if cpuInfo[0] == "processor\t":
-			totalcpus = totalcpus + 1
-	CPUINFO.close()
-
-#Make sure totalcpus was found
-if totalcpus == 0:
-	logerr("Could not calculate number of CPUs from /proc/cpuinfo")
-
-#Get jiffies before starting
-
-(idlejiffies, totaljiffies) = getjiffies()
-
-#Set up 0MQ connection
-try:
-    context = zmq.Context()
-    socket = context.socket(zmq.REQ)
-    socket.connect("tcp://%s:%d" % (remotehost,remoteport))
-except Exception as e:
-    logerr("Could not establish 0MQ session: %s" % e)
-    sys.exit(1)
-
-while 1:
-# Calc timestamp
+	out_dict['model'] = ' '.join([system,model])
+	dmi.close()
 	
-	curTime = time.gmtime()
-	timestmp = time.strftime(timeformat, curTime)
-# Calc current memory usage
-	try:
-		MEMINFO = open("/proc/meminfo", 'r')
-	except IOError:
-		logerr("Could not open /proc/meminfo")
-	else:
-		for a in MEMINFO:
-			memInfo = a.split()
-			if (memInfo[0] == "Inactive:"):
-				usedmem = int(totalmem) - int(memInfo[1])
-			if (memInfo[0] == "Committed_AS:"):
-				committedmem = memInfo[1]
-		MEMINFO.close()
-	try:
-		usedmem
-		committedmem
-	except NameError:
-		logerr("Could not identify Inactive or Committed_AS")
-	
-	oldmin = minorpagefaultssinceboot
-	oldmaj = majorpagefaultssinceboot
-	(minorpagefaultssinceboot, majorpagefaultssinceboot) = getpagefaults()
+	meminfo = open('/proc/meminfo', 'r')
+	for line in meminfo.readlines():
+		memInfo = line.split()
+		if memInfo[0] == "MemTotal:":
+			out_dict['totalmem'] = memInfo[1]
+		elif memInfo[0] == "CommitLimit:":
+			out_dict['totalcommit'] = memInfo[1]
+	meminfo.close()
+
+	cpuinfo = open("/proc/cpuinfo", 'r')
+	procs = 0
+	for line in cpuinfo.readlines():
+		if line.find("processor\t") > -1:
+			procs += 1
+	cpuinfo.close()
+	out_dict['totalcpus'] = procs
+	return out_dict
 
 	
-	pagefaultspersec = float(minorpagefaultssinceboot - oldmin + majorpagefaultssinceboot - oldmaj) / float(interval)
-	pagefaultspersec = round(pagefaultspersec, 2)
+def getmeminfo():
+	#TODO: make sure this gives the numbers we're expecting
+	meminfo = open("/proc/meminfo", "r")
+	for line in meminfo.readlines():
+		if line.find("Inactive:") > -1:
+			inactive = int(line.split()[1])
+		elif line.find('MemTotal:') > -1:
+			total = int(line.split()[1])
+		elif line.find('MemFree:') > -1:
+			mfree = int(line.split()[1])
+		elif line.find('Committed_AS:') > -1:
+			committed = int(line.split()[1])
+	out_dict = dict()
+	out_dict['usedmem'] = total - inactive-mfree
+	out_dict['committedmem'] = committed
+	return out_dict
+		
+def getpagefaults():
+	sarproc = Popen(['sar','-B'],stdout=PIPE)
+	sarout = sarproc.communicate()[0]
+	# magicks!
+	# take the output of sar and get the second toe last line
+	# it contains the averages, and the last line is blank
+	# split on white space and grab the 4th and 5th fields
+	# these contain the pagefault per second data
+	# turn those into floats and store them in appropri
+	pfps, mpfps = [float(x) for x in sarout.split('\n')[-2].split()[3:5]]
+	out_dict = {'pagefaultspersec': pfps+mpfps}
+	return out_dict
+
+def getcpuload():
+	loadavg = open("/proc/loadavg", 'r')
+	load = loadavg.read().split(" ")[1]
+	loadavg.close()
+
+	mpstat = Popen(['mpstat', '1', '5'], stdout=PIPE)
+	cpustats = mpstat.communicate()[0]
+	cpustats = cpustats.split('\n')[-2].split()[2:]
+	cpupercent = sum([float(x) for x in cpustats[:-1]])
+
+	out_dict = { 'cpuload': load,
+		     'cpupercent': cpupercent }
+	return out_dict
 	
-	(idle, total) = getjiffies()
-	if (total == totaljiffies):
-		cpupercent = "00.00"
-	else:
-		cpupercent = 100 - 100*(float(idle - idlejiffies) / float(total - totaljiffies))
-		cpupercent = round(cpupercent, 2);
+def getusers():
+	whoproc = Popen(['who', '-us'], stdout=PIPE)
+	who = whoproc.communicate()[0]
+	# maybe too magicky
+	# split the input on lines, and exclude the last line since it's blank
+	# for each line split on whitespace, and keep the first field (username)
+	# set users as a list of usernames
+	users = [x.split()[0] for x in who.split('\n')[:-1]]
+	# set returns the unique set of entries, and has a length attribute
+	usercount = len(set(users))
+	out_dict = {'loggedinusers' : usercount, 
+		    'loggedinuserbool' : (usercount > 0)}
+	return out_dict 
 	
-#Get load average
-	try:
-		LOADAVG = open("/proc/loadavg", 'r')
-	except IOError:
-		logerr("Could not open /proc/loadavg")
-	else:
-		for a in LOADAVG:
-			cpuload = a.split(" ")
-			cpuload = cpuload[1];
-		LOADAVG.close()
 
-	if cpuload == -1:
-		logerr("Could not get load average info from /proc/loadavg")
+def update_data():
+	out_dict = getmeminfo()
+	out_dict.update(getcpuload())
+	out_dict.update(getusers())
+	out_dict.update(getpagefaults())
+	out_dict['timestamp'] = time.strftime('%Y%m%d%H%M%S', time.gmtime())
+	return out_dict
 
-#Get logged in users
-	subprocess.call(["/usr/bin/who > users.txt"], shell=True)		
-	loggedinusers = 0
-	loggedinuserbool = 0
-	WHO = open("users.txt", 'r')
-	userlist = []
-	for a in WHO:
-		whoinfo = a.split(' ')
-		userlist.append(whoinfo[0])
-		loggedinuserbool = 1	
+        #dynamic entries
+        #x'timestamp' : -1
+        #x'usedmem': -1,
+        #x'committedmem': -1, 
+        #'pagefaultspersec': -1,
+        #'cpupercent': -1,
+        #'cpuload': -1,
+        #'loggedinusers': -1,
+        #'loggedinuserbool': False,
+	
+def reset_data():
+	out_dict = {'timestamp' : -1,
+                    'usedmem': -1,
+                    'committedmem': -1,  
+                    'pagefaultspersec': -1,
+                    'cpupercent': -1,
+                    'cpuload': -1,
+                    'loggedinusers': -1,
+                    'loggedinuserbool': False
+	}
+	return out_dict
 
-	userlist = list(set(userlist))
-	loggedinusers = len(userlist)
-	WHO.close()
 
-        # NEW: now sending a dictionary of the statistics
-        senddict = {'version':labstatsversion, 'timestamp':timestmp, 
-                    'hostname':localhost, 'os':os, 'model':model, 
-                    'totalmem':totalmem, 'totalcommit':totalcommit, 
-                    'totalcpus':totalcpus, 'usedmem':usedmem, 
-                    'committedmem':committedmem, 
-                    'pagefaultspersec':pagefaultspersec, 
-                    'cpupercent':cpupercent, 'cpuload':cpuload, 
-                    'loggedinusers':loggedinusers, 
-                    'loggedinuserbool':loggedinuserbool}
-        socket.send_json(senddict)
-        response = socket.recv()
-        print "Recieved reply: %s" % response
-
-	if debug:
-		print "Labstats Version: ", labstatsversion
-		print "Time: ", timestmp
-		print "Hostname: ", localhost
-		print "OS: ", os
-		print "Model: ", model
-		print "Total Memory: ", totalmem
-		print "Total Committed Memory: ", totalcommit
-		print "Total CPUs: ", totalcpus
-		print "Used Memory: ", usedmem
-		print "Committed memory: ", committedmem
-		print "Page Faults per second: ", pagefaultspersec
-		print "CPU Percentage: ", cpupercent
-		print "CPU Load: ", cpuload
-		print "Logged in users: ", loggedinusers
-		print "User logged in?: ", loggedinuserbool
-
-	time.sleep(interval)
-syslog.closelog()
-
+data_dict.update(static_data())
+data_dict.update(update_data())
+import json
+print json.dumps(data_dict)
+#sTODO: implement functions used in update_data
+#TODO: figure out launching on an interval
