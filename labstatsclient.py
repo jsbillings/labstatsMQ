@@ -4,6 +4,7 @@ import os
 import argparse
 import socket
 import time
+#import logging
 from subprocess import Popen, PIPE
 
 # TODO: setup logging
@@ -13,7 +14,7 @@ remotehost = 'hwstats.engin.umich.edu'
 try:
 	remotehost = os.environ["LABSTATSSERVER"]
 except:
-	pass
+	pass 
 
 remoteport = 5555
 try:
@@ -22,7 +23,7 @@ except:
 	pass
 version = "2.0"
 
-#add cmdline options
+# adds CLI flags
 parser = argparse.ArgumentParser()
 parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
 			help="Sets the remote server that accepts labstats data")
@@ -33,7 +34,8 @@ parser.add_argument("--debug", "-d", action="store_true", default=False, dest="d
 parser.add_argument("--interval","-i", action="store",type=int, default=300, dest="interval", 
 			help="Sets the interval between reporting data")
 options = parser.parse_args()
-del remotehost, remoteport
+
+del remotehost, remoteport 
 
 data_dict = {
         #static entries
@@ -58,6 +60,7 @@ data_dict = {
 def static_data():
 	out_dict = {}
 	out_dict['hostname'] = socket.getfqdn()
+	# socket.getfqdn() is using information provided in the file /etc/hosts
 
 	dmi = open("/var/cache/dmi/dmi.info", 'r')
 	for line in dmi.readlines():
@@ -66,7 +69,7 @@ def static_data():
 			system = sysInfo[1]
 		elif sysInfo[0] == "SYSTEMPRODUCTNAME=":
 			model = sysInfo[1]
-	out_dict['model'] = ' '.join([system,model])
+	out_dict['model'] = ' '.join([system,model]) #concatenates a space with sys and model no.
 	dmi.close()
 	
 	meminfo = open('/proc/meminfo', 'r')
@@ -104,18 +107,21 @@ def getmeminfo():
 	out_dict['usedmem'] = total - inactive-mfree
 	out_dict['committedmem'] = committed
 	return out_dict
-		
-def getpagefaults():
-	sarproc = Popen(['sar','-B'],stdout=PIPE)
-	sarout = sarproc.communicate()[0]
-	# magicks!
-	# take the output of sar and get the second toe last line
-	# it contains the averages, and the last line is blank
-	# split on white space and grab the 4th and 5th fields
-	# these contain the pagefault per second data
-	# turn those into floats and store them in appropri
-	pfps, mpfps = [float(x) for x in sarout.split('\n')[-2].split()[3:5]]
-	out_dict = {'pagefaultspersec': pfps+mpfps}
+
+def getpagefaults(): 
+	sarproc = Popen(['sar','-B'],stdout = PIPE)
+	sarout_raw = sarproc.communicate()[0]
+	sarout = sarout_raw.split('\n') 
+	avg_line = ''
+	for line in sarout[::-1]:
+		if line.find("Average") != -1:
+			avg_line = line
+			break
+	#print 'avg_line = ', avg_line
+	avg_list = avg_line.split()
+	pfps = float(avg_list[3])
+	mpfps = float(avg_list[4])
+	out_dict = {'pagefaultspersec': pfps + mpfps}
 	return out_dict
 
 def getcpuload():
@@ -133,7 +139,7 @@ def getcpuload():
 	return out_dict
 	
 def getusers():
-	whoproc = Popen(['who', '-us'], stdout=PIPE)
+	whoproc = Popen(['who', '-us'], stdout=PIPE) 
 	who = whoproc.communicate()[0]
 	# maybe too magicky
 	# split the input on lines, and exclude the last line since it's blank
@@ -145,7 +151,6 @@ def getusers():
 	out_dict = {'loggedinusers' : usercount, 
 		    'loggedinuserbool' : (usercount > 0)}
 	return out_dict 
-	
 
 def update_data():
 	out_dict = getmeminfo()
@@ -177,10 +182,8 @@ def reset_data():
 	}
 	return out_dict
 
-
 data_dict.update(static_data())
 data_dict.update(update_data())
+
 import json
-print json.dumps(data_dict)
-#sTODO: implement functions used in update_data
-#TODO: figure out launching on an interval
+print json.dumps(data_dict) # prints out the data
