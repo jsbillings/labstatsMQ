@@ -1,39 +1,56 @@
+#!/usr/bin/env python
+
+import os
 import socket
 from datetime import datetime
 import logging
 from logging import handlers
 from subprocess import Popen, PIPE
 
-# Gets IP address, MAC address for hostname
-addr_proc = Popen('ip addr show eth0',shell=True,stdout=PIPE)
-ip_info = addr_proc.communicate()[0]
-addr = ip_info.split('inet')[1].strip().split('/')[0].strip()
-mac = ip_info.split('ether')[1].strip().split(' ')[0].strip() # Switched split('/') to split(' ')
+# Any way to not have to feed it into a function and use a logger object outside?
+# Else the __name__ checking is redundant
+# According to os.getpid() in both logger and client, they share the same pid
+# Might require multiprocessing to stop processname from always being MainProcess: seems like a python bug
 
-warn_msg = ''
-# Attempts to get hostname from IP address
-try:
-    host_name = socket.gethostbyaddr(addr)[0] # gets primary hostname responding to ip address, addr
-except socket.herror, h:
-    warn_msg = 'Logger set up without successfully looking up hostname: error type ' + repr(h) # to report later
-    host_name = 'dnshost' 
+if __name__ == "__main__":
+    pass
+elif __name__ == "labstatsclient":
+    loggersetup()
 
-# In case a message goes out, it'll default to using the logger name as logged name
-logger = logging.getLogger(host_name)
-handler = logging.handlers.SysLogHandler(address = ('linuxlog.engin.umich.edu', 514)) #changed from 515 to 514
+def loggersetup():
+    # Gets IP address, MAC address for hostname
+    addr_proc = Popen('ip addr show eth0', shell = True, stdout = PIPE)
+    ip_info = addr_proc.communicate()[0]
+    addr = ip_info.split('inet')[1].strip().split('/')[0].strip()
+    mac = ip_info.split('ether')[1].strip().split(' ')[0].strip() 
 
-# Format: eg. "Dec 12 13:37:34 caen-sysstdp03.engin.umich.edu bcfg2[3561]: Loaded tool drivers"
-datefmt = datetime.now().strftime('%b %d %H:%M:%S')
-formatter = logging.Formatter(fmt = datefmt + ' ' + host_name + ' ' + '%(processName)s[%(process)d]: %(message)s')
-# __main__, program name = labstats (on top
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-#warn gets errors and useful to have info.
-#debug gets lots of info (and info even more so.)
-logger.setLevel(logging.INFO) # sets the lowest severity level the logger will handle
+    warn_msg = ''
+    # Attempts to get hostname from IP address
+    try:
+        host_name = socket.gethostbyaddr(addr)[0] 
+    except socket.herror, h:
+        warn_msg = 'Logger set up without successfully looking up hostname: error type ' + repr(h)
+        host_name = 'dnshost' 
 
-# Updates on whether logger looked up hostname successfully
-if host_name == 'dnshost':
-    logging.warning(warn_msg) # should return short description of herror
-else:
-    logger.info('Logger set up successfully')
+    logger = logging.getLogger(host_name)
+    handler = logging.handlers.SysLogHandler(address = ('linuxlog.engin.umich.edu', 514)) #changed from 515 to 514
+
+    # Jan 13 13:30:23 caen-sysstdp03.engin.umich.edu MainProcess[5103]: Logger set up successfully
+    # change MainProcess to labstatsclient
+    datefmt = datetime.now().strftime('%b %d %H:%M:%S')
+    formatter = logging.Formatter(fmt = datefmt + ' ' + host_name + ' ' + '%(processName)s[%(process)d]: %(message)s')
+
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING) # set normally to warning, can set to debug if needed
+    # DEBUG < INFO < WARNING < ERROR
+
+    # Updates on whether logger looked up hostname successfully
+    if host_name == 'dnshost':
+        logging.warning(warn_msg) # should return short description of herror
+    else:
+        logger.info('Logger set up successfully')
+
+    return logger
+
+

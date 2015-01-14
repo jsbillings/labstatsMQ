@@ -1,29 +1,30 @@
 #!/usr/bin/env python
-
 import os
 import argparse
 import socket
 import time
-#import logging
+import logging
 from subprocess import Popen, PIPE
+import labstatslogger
 
-# TODO: setup logging
+logger = labstatslogger.loggersetup()
 
-#client static settings
+# TODO: maybe move the functions over to another file?
+
+# client static settings
 remotehost = 'hwstats.engin.umich.edu'
 try:
 	remotehost = os.environ["LABSTATSSERVER"]
 except:
-	pass 
+	logger.debug("Could not find remotehost")
 
 remoteport = 5555
 try:
 	remoteport = int(os.environ["LABSTATSPORT"])
 except:
-	pass
-version = "2.0"
+	logger.debug("Could not find remoteport")
 
-# adds CLI flags
+# Adds CLI flags
 parser = argparse.ArgumentParser()
 parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
 			help="Sets the remote server that accepts labstats data")
@@ -35,10 +36,14 @@ parser.add_argument("--interval","-i", action="store",type=int, default=300, des
 			help="Sets the interval between reporting data")
 options = parser.parse_args()
 
+if options.debug:
+	print "Debug on"
+	logger.setLevel(logging.DEBUG)
+
 del remotehost, remoteport 
 
 data_dict = {
-        #static entries
+        # Static entries
         'version': "2.0",
         'os': "L",
         'hostname': None,
@@ -47,7 +52,7 @@ data_dict = {
         'totalcommit': -1,
         'totalcpus': -1,
 
-        #dynamic entries
+        # Dynamic entries
         'timestamp' : -1,
         'usedmem': -1,
         'committedmem': -1, 
@@ -58,21 +63,28 @@ data_dict = {
         'loggedinuserbool': False,
 }
 def static_data():
-	out_dict = {}
-	out_dict['hostname'] = socket.getfqdn()
-	# socket.getfqdn() is using information provided in the file /etc/hosts
+	out_dict = dict()
+	out_dict['hostname'] = socket.getfqdn() # info provided by file /etc/hosts
 
-	dmi = open("/var/cache/dmi/dmi.info", 'r')
+	try: 
+		dmi = open("/var/cache/dmi/dmi.info", 'r')
+	except Exception as e:
+		logger.debug("Exception encountered: could not open /var/cache/dmi/dmi.info")
+		return out_dict
 	for line in dmi.readlines():
 		sysInfo = line.split("'")
 		if sysInfo[0] == "SYSTEMMANUFACTURER=":
 			system = sysInfo[1]
 		elif sysInfo[0] == "SYSTEMPRODUCTNAME=":
 			model = sysInfo[1]
-	out_dict['model'] = ' '.join([system,model]) #concatenates a space with sys and model no.
+	out_dict['model'] = ' '.join([system,model]) # concatenates a space with sys and model no.
 	dmi.close()
 	
-	meminfo = open('/proc/meminfo', 'r')
+	try:
+		meminfo = open('/proc/meminfo', 'r')
+	except Exception as e:
+		logger.debug("Exception encountered: could not open /proc/meminfo")
+		return out_dict
 	for line in meminfo.readlines():
 		memInfo = line.split()
 		if memInfo[0] == "MemTotal:":
@@ -80,8 +92,12 @@ def static_data():
 		elif memInfo[0] == "CommitLimit:":
 			out_dict['totalcommit'] = memInfo[1]
 	meminfo.close()
-
-	cpuinfo = open("/proc/cpuinfo", 'r')
+	
+	try:
+		cpuinfo = open("/proc/cpuinfo", 'r')
+	except Exception as e:
+		logger.debug("Exception encountered: could not open /proc/cpuinfo")
+		return out_dict
 	procs = 0
 	for line in cpuinfo.readlines():
 		if line.find("processor\t") > -1:
@@ -89,11 +105,15 @@ def static_data():
 	cpuinfo.close()
 	out_dict['totalcpus'] = procs
 	return out_dict
-
 	
-def getmeminfo():
-	#TODO: make sure this gives the numbers we're expecting
-	meminfo = open("/proc/meminfo", "r")
+def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
+	out_dict = dict()
+	try:
+		meminfo = open("/proc/meminfo", "r")
+	except Exception as e:
+		logger.debug("Exception encountered: could not open /proc/meminfo")
+		return out_dict
+
 	for line in meminfo.readlines():
 		if line.find("Inactive:") > -1:
 			inactive = int(line.split()[1])
@@ -103,21 +123,28 @@ def getmeminfo():
 			mfree = int(line.split()[1])
 		elif line.find('Committed_AS:') > -1:
 			committed = int(line.split()[1])
-	out_dict = dict()
 	out_dict['usedmem'] = total - inactive-mfree
 	out_dict['committedmem'] = committed
 	return out_dict
 
 def getpagefaults(): 
+	out_dict = dict()
 	sarproc = Popen(['sar','-B'],stdout = PIPE)
-	sarout_raw = sarproc.communicate()[0]
+	### 
+	try:
+		sarout_raw = sarproc.communicate()[0]
+		raise Exception
+	except Exception as e:
+		logger.debug("Exception encountered: sar -B failed to communicate properly")
+		# logger.debug(repr(e)) # doesn't provide much info
+		return out_dict
+
 	sarout = sarout_raw.split('\n') 
 	avg_line = ''
 	for line in sarout[::-1]:
 		if line.find("Average") != -1:
 			avg_line = line
 			break
-	#print 'avg_line = ', avg_line
 	avg_list = avg_line.split()
 	pfps = float(avg_list[3])
 	mpfps = float(avg_list[4])
@@ -125,7 +152,13 @@ def getpagefaults():
 	return out_dict
 
 def getcpuload():
-	loadavg = open("/proc/loadavg", 'r')
+	out_dict = dict()
+	try:
+		loadavg = open("/proc/loadavg", 'r')
+	except Exception as e:
+		logger.debug("Exception encountered: could not open /proc/loadavg")
+		return out_dict
+
 	load = loadavg.read().split(" ")[1]
 	loadavg.close()
 
@@ -139,9 +172,15 @@ def getcpuload():
 	return out_dict
 	
 def getusers():
+	out_dict = dict()
 	whoproc = Popen(['who', '-us'], stdout=PIPE) 
-	who = whoproc.communicate()[0]
-	# maybe too magicky
+	###
+	try: 
+		who = whoproc.communicate()[0]
+	except Exception as e:
+		logger.debug("Exception encountered: who -us failed to communicate properly")
+		# logger.debug(repr(e))
+		return out_dict
 	# split the input on lines, and exclude the last line since it's blank
 	# for each line split on whitespace, and keep the first field (username)
 	# set users as a list of usernames
@@ -186,4 +225,4 @@ data_dict.update(static_data())
 data_dict.update(update_data())
 
 import json
-print json.dumps(data_dict) # prints out the data
+print json.dumps(data_dict) 
