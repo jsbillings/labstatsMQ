@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 import os
 import argparse
-import socket
+import socket # zmq socket?
 import time
 import logging
 from subprocess import Popen, PIPE
 import labstatslogger
 
-logger = labstatslogger.loggersetup()
+__name__ = 'labstatsclient'
 
+logger = labstatslogger.logger
 # TODO: maybe move the functions over to another file?
 
 # client static settings
@@ -41,6 +42,7 @@ if options.debug:
 	logger.setLevel(logging.DEBUG)
 
 del remotehost, remoteport 
+logger.debug("Started logger in client")
 
 data_dict = {
         # Static entries
@@ -133,7 +135,6 @@ def getpagefaults():
 	### 
 	try:
 		sarout_raw = sarproc.communicate()[0]
-		raise Exception
 	except Exception as e:
 		logger.debug("Exception encountered: sar -B failed to communicate properly")
 		# logger.debug(repr(e)) # doesn't provide much info

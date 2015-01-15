@@ -7,17 +7,17 @@ import logging
 from logging import handlers
 from subprocess import Popen, PIPE
 
-# Any way to not have to feed it into a function and use a logger object outside?
-# Else the __name__ checking is redundant
-# According to os.getpid() in both logger and client, they share the same pid
-# Might require multiprocessing to stop processname from always being MainProcess: seems like a python bug
+# TODO 
+# According to os.getpid() in both logger and client, they share the same pid-
+# Might require multiprocessing to stop processname from always being MainProcess, or another library
 
-if __name__ == "__main__":
+# When this file is run directly, labstatslogger's __name__ is __main__
+# Else when run via the client (just by importing it), __name__ is labstatslogger.
+# When running the client and import this, client's __name__ == __main__
+
+if __name__ == "__main__": # placeholder; should never run
     pass
-elif __name__ == "labstatsclient":
-    loggersetup()
-
-def loggersetup():
+else:
     # Gets IP address, MAC address for hostname
     addr_proc = Popen('ip addr show eth0', shell = True, stdout = PIPE)
     ip_info = addr_proc.communicate()[0]
@@ -42,7 +42,7 @@ def loggersetup():
 
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-    logger.setLevel(logging.WARNING) # set normally to warning, can set to debug if needed
+    logger.setLevel(logging.WARNING)
     # DEBUG < INFO < WARNING < ERROR
 
     # Updates on whether logger looked up hostname successfully
@@ -50,7 +50,4 @@ def loggersetup():
         logging.warning(warn_msg) # should return short description of herror
     else:
         logger.info('Logger set up successfully')
-
-    return logger
-
 
