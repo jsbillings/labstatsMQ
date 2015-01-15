@@ -11,9 +11,10 @@ from subprocess import Popen, PIPE
 # According to os.getpid() in both logger and client, they share the same pid-
 # Might require multiprocessing to stop processname from always being MainProcess, or another library
 
-# When this file is run directly, labstatslogger's __name__ is __main__
-# Else when run via the client (just by importing it), __name__ is labstatslogger.
-# When running the client and import this, client's __name__ == __main__
+# When labstatslogger is run directly, labstatslogger's __name__ == "__main__"
+# Else when run via the client (by importing it), labstatslogger's __name__ == "labstatslogger".
+# When running the client and labstatslogger is imported, client's __name__ == __main__
+# However, client's __name__ now == "labstatsclient"
 
 if __name__ == "__main__": # placeholder; should never run
     pass
@@ -36,7 +37,7 @@ else:
     handler = logging.handlers.SysLogHandler(address = ('linuxlog.engin.umich.edu', 514)) #changed from 515 to 514
 
     # Jan 13 13:30:23 caen-sysstdp03.engin.umich.edu MainProcess[5103]: Logger set up successfully
-    # change MainProcess to labstatsclient
+    # TODO: change MainProcess to labstatsclient
     datefmt = datetime.now().strftime('%b %d %H:%M:%S')
     formatter = logging.Formatter(fmt = datefmt + ' ' + host_name + ' ' + '%(processName)s[%(process)d]: %(message)s')
 
