@@ -42,7 +42,7 @@ if options.debug:
 	logger.setLevel(logging.DEBUG)
 
 del remotehost, remoteport 
-logger.debug("Started logger in client")
+logger.info("Started logger in client")
 
 data_dict = {
         # Static entries
@@ -132,12 +132,9 @@ def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
 def getpagefaults(): 
 	out_dict = dict()
 	sarproc = Popen(['sar','-B'],stdout = PIPE)
-	### 
-	try:
-		sarout_raw = sarproc.communicate()[0]
-	except Exception as e:
+	sarout_raw = sarproc.communicate()[0]
+	if (sarproc.returncode != 0): # Will this check for all poss. errors?
 		logger.debug("Exception encountered: sar -B failed to communicate properly")
-		# logger.debug(repr(e)) # doesn't provide much info
 		return out_dict
 
 	sarout = sarout_raw.split('\n') 
@@ -175,12 +172,9 @@ def getcpuload():
 def getusers():
 	out_dict = dict()
 	whoproc = Popen(['who', '-us'], stdout=PIPE) 
-	###
-	try: 
-		who = whoproc.communicate()[0]
-	except Exception as e:
+	who = whoproc.communicate()[0]
+	if (whoproc.returncode != 0):
 		logger.debug("Exception encountered: who -us failed to communicate properly")
-		# logger.debug(repr(e))
 		return out_dict
 	# split the input on lines, and exclude the last line since it's blank
 	# for each line split on whitespace, and keep the first field (username)
