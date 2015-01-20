@@ -16,7 +16,7 @@ from subprocess import Popen, PIPE
 # When running the client and labstatslogger is imported, client's __name__ == __main__
 # However, client's __name__ now == "labstatsclient"
 
-if __name__ == "__main__": # placeholder; should never run
+if __name__ == "__main__": # Should never run
     pass
 else:
     # Gets IP address, MAC address for hostname

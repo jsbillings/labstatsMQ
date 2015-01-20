@@ -1,16 +1,15 @@
 #!/usr/bin/env python
 import os
 import argparse
-import socket # zmq socket?
+import socket 
+import zmq
 import time
 import logging
 from subprocess import Popen, PIPE
 import labstatslogger
 
 __name__ = 'labstatsclient'
-
 logger = labstatslogger.logger
-# TODO: maybe move the functions over to another file?
 
 # client static settings
 remotehost = 'hwstats.engin.umich.edu'
@@ -66,7 +65,7 @@ data_dict = {
 }
 def static_data():
 	out_dict = dict()
-	out_dict['hostname'] = socket.getfqdn() # info provided by file /etc/hosts
+	out_dict['hostname'] = socket.getfqdn() 
 
 	try: 
 		dmi = open("/var/cache/dmi/dmi.info", 'r')
@@ -79,7 +78,7 @@ def static_data():
 			system = sysInfo[1]
 		elif sysInfo[0] == "SYSTEMPRODUCTNAME=":
 			model = sysInfo[1]
-	out_dict['model'] = ' '.join([system,model]) # concatenates a space with sys and model no.
+	out_dict['model'] = ' '.join([system,model]) 
 	dmi.close()
 	
 	try:
@@ -133,7 +132,7 @@ def getpagefaults():
 	out_dict = dict()
 	sarproc = Popen(['sar','-B'],stdout = PIPE)
 	sarout_raw = sarproc.communicate()[0]
-	if (sarproc.returncode != 0): # Will this check for all poss. errors?
+	if (sarproc.returncode != 0): # Note: will this check for all poss. errors?
 		logger.debug("Exception encountered: sar -B failed to communicate properly")
 		return out_dict
 
@@ -173,7 +172,7 @@ def getusers():
 	out_dict = dict()
 	whoproc = Popen(['who', '-us'], stdout=PIPE) 
 	who = whoproc.communicate()[0]
-	if (whoproc.returncode != 0):
+	if (whoproc.returncode != 0):  # Note: will this check for all poss. errors?
 		logger.debug("Exception encountered: who -us failed to communicate properly")
 		return out_dict
 	# split the input on lines, and exclude the last line since it's blank
@@ -220,4 +219,13 @@ data_dict.update(static_data())
 data_dict.update(update_data())
 
 import json
-print json.dumps(data_dict) 
+print json.dumps(data_dict)
+
+# Now send data off to push-pull sockets
+context = zmq.Context()
+push_socket = context.socket(zmq.PUSH)
+push_socket.connect('tcp://localhost:5555')
+push_socket.send_json(data_dict)
+print 'done'
+
+
