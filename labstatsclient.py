@@ -5,13 +5,14 @@ import socket
 import zmq
 import time
 import logging
+import sys
 from subprocess import Popen, PIPE
 import labstatslogger
 
 __name__ = 'labstatsclient'
 logger = labstatslogger.logger
 
-# client static settings
+# Client static settings
 remotehost = 'hwstats.engin.umich.edu'
 try:
 	remotehost = os.environ["LABSTATSSERVER"]
@@ -34,10 +35,15 @@ parser.add_argument("--debug", "-d", action="store_true", default=False, dest="d
 			help="Turns on debug logging")
 parser.add_argument("--interval","-i", action="store",type=int, default=300, dest="interval", 
 			help="Sets the interval between reporting data")
+parser.add_argument("--verbose", "-v", action="store_true", default=False, dest = "verbose", 
+		        help="Turns on verbosity")
 options = parser.parse_args()
 
+if options.verbose:
+	print "Verbosity on"
 if options.debug:
-	print "Debug on"
+	if options.verbose:
+		print "Debug on"
 	logger.setLevel(logging.DEBUG)
 
 del remotehost, remoteport 
@@ -219,13 +225,19 @@ data_dict.update(static_data())
 data_dict.update(update_data())
 
 import json
-print json.dumps(data_dict)
+if options.verbose:
+	print "Data gathered: "
+	print json.dumps(data_dict)
 
-# Now send data off to push-pull sockets
+# Push data to socket
 context = zmq.Context()
 push_socket = context.socket(zmq.PUSH)
 push_socket.connect('tcp://localhost:5555')
 push_socket.send_json(data_dict)
-print 'done'
+if options.verbose:
+	print 'done'
 
+# Issue: client running without subscriber and collector will hang
+# However, can't manually exit out with os._exit(0)
+# It will prevent subscriber and collector from ever getting json
 
