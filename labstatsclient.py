@@ -1,16 +1,21 @@
 #!/usr/bin/env python
-import os
-import argparse
-import socket 
-import zmq
-import time
-import logging
-import sys
+import os, sys, time
+import argparse, logging
+import zmq, socket 
 from subprocess import Popen, PIPE
 import labstatslogger
 
 __name__ = 'labstatsclient'
 logger = labstatslogger.logger
+'''
+if sys.platform.startswith("linux"):
+	print 'is linux'
+	import ctypes
+	from ctypes.util import find_library
+	libc = ctypes.CDLL(find_library('c'))
+	PR_SET_NAME = 15
+	libc.prctl(PR_SET_NAME, ctypes.c_char_p("labstatsclient"), 0, 0, 0)
+'''
 
 # Client static settings
 remotehost = 'hwstats.engin.umich.edu'
@@ -25,6 +30,7 @@ try:
 except:
 	logger.debug("Could not find remoteport")
 
+# TODO: implement functionality of flags
 # Adds CLI flags
 parser = argparse.ArgumentParser()
 parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
@@ -226,16 +232,20 @@ data_dict.update(update_data())
 
 import json
 if options.verbose:
-	print "Data gathered: "
 	print json.dumps(data_dict)
 
 # Push data to socket
 context = zmq.Context()
 push_socket = context.socket(zmq.PUSH)
 push_socket.connect('tcp://localhost:5555')
-push_socket.send_json(data_dict)
-if options.verbose:
-	print 'done'
+try:
+	push_socket.send_json(data_dict)
+	if options.verbose:
+		print "Done"
+except zmq.ZMQError as e:
+	if options.verbose:
+		print "ZMQ error encountered!"
+	logger.warning("Warning: client was unable to send data")
 
 # Issue: client running without subscriber and collector will hang
 # However, can't manually exit out with os._exit(0)
