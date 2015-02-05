@@ -19,10 +19,12 @@ labstats_publisher = context.socket(zmq.PUB)
 def start_sockets():
     try:
         client_collector.bind('tcp://*:5555')
-    except zmq.ZMQError as e:
+    except zmq.ZMQError:
         if options.verbose:
             print 'Error: Port 5555 already in use'
         logger.warning('Warning: collector can\'t start, port 5555 already in use')
+        if options.daemon:
+            daemon.delpid()
         exit(1)
     try:
         labstats_publisher.bind('tcp://*:5556')
@@ -30,6 +32,8 @@ def start_sockets():
         if options.verbose:
             print 'Error: Port 5556 already in use'
         logger.warning('Warning: collector can\'t start, port 5556 already in use')
+        if options.daemon:
+            daemon.delpid()
         exit(1)
 
 def main():
@@ -55,9 +59,12 @@ def main():
                 print "ZMQ error encountered: attempting restart"
             logger.warning("Warning: collector encountered ZMQ error, unable to pull/publish data. Restarting collector.")
             if options.daemon:
-                daemon.restart()
+                logger.warning('Restarting subscriber...')
+                daemon.restart() # sleeps for 5 seconds
+                logger.warning('Restarted subscriber!')
             else: # restart the program without daemonize flag
-                # os.execl()
+                sys.stdout.flush()
+                os.execl(sys.executable, *([sys.executable]+sys.argv))
                 exit(1)
             # if zmq error, log it, restart after 5-10 sec sleep delay (so it won't redo error)
             # it'll work if collector restarts and subscriber is still up
@@ -65,10 +72,15 @@ def main():
             if options.verbose:
                 print 'Error: was not able to restart collector'
             logger.warning("Warning: was not able to restart collector")
+            if options.daemon:
+                daemon.delpid()
+            exit(1)
         except (KeyboardInterrupt, SystemExit):
             if options.verbose:
                 print 'Quitting collector...'
             logger.info("Quit collector")
+            if options.daemon:
+                daemon.delpid()
             exit(0)
         '''
         except: # without above except, can't quit with C^c
