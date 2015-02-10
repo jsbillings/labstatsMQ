@@ -49,11 +49,11 @@ if options.verbose:
 	print "Verbosity on"
 if options.debug:
 	if options.verbose:
-		print "Debug on"
+		print "Set logger level to debug"
 	logger.setLevel(logging.DEBUG)
 
 del remotehost, remoteport 
-logger.info("Started logger in client")
+#logger.info("Started logger in client")
 
 data_dict = {
         # Static entries

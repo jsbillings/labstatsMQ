@@ -9,6 +9,7 @@ import daemonize
 import sys, os
 from multiprocessing import Process
 
+# TODO: clean up pidfile upon exit
 # TODO: add logging instances
 logger = labstatslogger.logger
 
@@ -16,7 +17,11 @@ context = zmq.Context()
 client_collector = context.socket(zmq.PULL)
 labstats_publisher = context.socket(zmq.PUB)
 
+directory = "/var/run/labstats/"
+
 def start_sockets():
+    if options.verbose:
+        print 'Starting sockets...'
     try:
         client_collector.bind('tcp://*:5555')
     except zmq.ZMQError:
@@ -50,18 +55,18 @@ def main():
             
             if options.verbose:
                 print "Received message:\n%s" % message
-            # Publish
+            # Publish to subscribers
             if options.verbose:
                 print "Publishing response"
             labstats_publisher.send_json(message)
+
         except zmq.ZMQError as e:
             if options.verbose:
                 print "ZMQ error encountered: attempting restart"
             logger.warning("Warning: collector encountered ZMQ error, unable to pull/publish data. Restarting collector.")
             if options.daemon:
-                logger.warning('Restarting subscriber...')
                 daemon.restart() # sleeps for 5 seconds
-                logger.warning('Restarted subscriber!')
+                logger.info('Restarted collector!')
             else: # restart the program without daemonize flag
                 sys.stdout.flush()
                 os.execl(sys.executable, *([sys.executable]+sys.argv))
@@ -70,8 +75,8 @@ def main():
             # it'll work if collector restarts and subscriber is still up
         except OSError as e:
             if options.verbose:
-                print 'Error: was not able to restart collector'
-            logger.warning("Warning: was not able to restart collector")
+                print 'Error: was not able to restart collector. Quitting...'
+            logger.warning("Warning: was not able to restart collector, quitting...")
             if options.daemon:
                 daemon.delpid()
             exit(1)
@@ -101,19 +106,19 @@ if __name__ == "__main__":
                         dest = "verbose", help = "Turns on verbose output")
     parser.add_argument("--daemonize", "-d", action = "store_true", default = False, 
                         dest = "daemon", help = "Turns collector into daemonized process")
+    parser.add_argument("--pidfile", "-p", action="store", default=directory,
+                        dest="directory", help="Sets location of daemon's pidfile")
     options = parser.parse_args()
     
     if options.verbose:
         print "Verbosity on"
     if options.daemon:
-        if not os.path.exists('/tmp/labstats/'): # /tmp/labstats/ preferred, but upon stop, pid nonexistent report
-            os.mkdir('/tmp/labstats/')
-        # put pidfile in own subdirectory for all labstats stuff; put in temp for now
-        # '/tmp/labstats/collector.pid' preferred
-        daemon = collectorDaemon('/tmp/labstats/collector.pid')
+        if not os.path.exists(directory):
+            os.mkdir(directory)
+        daemon = collectorDaemon(directory+'collector.pid')
         daemon.start()
         
-    else: # run directly as unindependent Python process, not bg daemon
+    else: # run directly as unindependent Python process, not as daemon
         main()
 
 

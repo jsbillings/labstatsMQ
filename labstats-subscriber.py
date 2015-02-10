@@ -9,11 +9,13 @@ from daemon import Daemon
 # TODO: clean up pidfile after it closes abnormally
 logger = labstatslogger.logger
 
-def main():
-    # Set up ZMQ sockets and connections
-    context = zmq.Context()
-    subscriber = context.socket(zmq.SUB)
-    subscriber.setsockopt(zmq.SUBSCRIBE,'')
+context = zmq.Context()
+subscriber = context.socket(zmq.SUB)
+subscriber.setsockopt(zmq.SUBSCRIBE,'')
+
+directory = "/var/run/labstats/"
+
+def start_sockets():
     try:
         subscriber.connect('tcp://localhost:5556')
     except zmq.ZMQError:
@@ -23,6 +25,10 @@ def main():
         # Restart would do nothing unless old process quit, so just exit
         daemon.delpid()
         exit(1)
+
+def main():
+    # Set up ZMQ sockets and connections
+    start_sockets()
     while True:
         try:
             message = subscriber.recv_json()
@@ -71,14 +77,16 @@ if __name__ == '__main__':
                         dest = "verbose", help = "Turns on verbosity flag")
     parser.add_argument("--daemonize", "-d", action = "store_true", default = False, 
                         dest = "daemon", help = "Turns subscriber into daemon")
+    parser.add_argument("--pidfile", "-p", action = "store", default = directory,
+                        dest = "directory", help = "Sets location of daemon's pidfile")
     options = parser.parse_args()
 
     if options.verbose:
         print "Verbosity on"
     if options.daemon:
-        if not os.path.exists('/tmp/labstats/'):
-            os.mkdir('/tmp/labstats/')
-        daemon = subscriberDaemon('/tmp/labstats/subscriber.pid')
+        if not os.path.exists(directory):
+            os.mkdir(directory)
+        daemon = subscriberDaemon(directory+'subscriber.pid')
         daemon.start()
     else:
         main()
