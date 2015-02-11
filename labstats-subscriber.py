@@ -23,7 +23,8 @@ def start_sockets():
             print 'Error: port 5556 already in use'
         logger.warning('Warning: subscriber can\'t start, port 5556 already in use')
         # Restart would do nothing unless old process quit, so just exit
-        daemon.delpid()
+        if options.daemon:
+            daemon.delpid()
         exit(1)
 
 def main():
@@ -85,7 +86,11 @@ if __name__ == '__main__':
         print "Verbosity on"
     if options.daemon:
         if not os.path.exists(directory):
-            os.mkdir(directory)
+            try:
+                os.mkdir(directory)
+            except OSError as e:
+                logger.error("Encountered OSError while trying to create "+directory)
+                exit(1)
         daemon = subscriberDaemon(directory+'subscriber.pid')
         daemon.start()
     else:

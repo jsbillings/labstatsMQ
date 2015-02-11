@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 import os, sys, time
-import argparse, logging
+import argparse
 import zmq, socket 
 from subprocess import Popen, PIPE
-import labstatslogger
+import labstatslogger, logging
+import json
 
 __name__ = 'labstatsclient'
 logger = labstatslogger.logger
@@ -30,8 +31,7 @@ try:
 except:
 	logger.debug("Could not find remoteport")
 
-# TODO: implement functionality of flags
-# Adds CLI flags
+# TODO: implement functionality of --interval
 parser = argparse.ArgumentParser()
 parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
 			help="Sets the remote server that accepts labstats data")
@@ -53,7 +53,7 @@ if options.debug:
 	logger.setLevel(logging.DEBUG)
 
 del remotehost, remoteport 
-#logger.info("Started logger in client")
+logger.info("Started logger in client")
 
 data_dict = {
         # Static entries
@@ -230,7 +230,6 @@ def reset_data():
 data_dict.update(static_data())
 data_dict.update(update_data())
 
-import json
 if options.verbose:
 	print json.dumps(data_dict)
 
@@ -241,12 +240,16 @@ push_socket.connect('tcp://localhost:5555')
 try:
 	push_socket.send_json(data_dict)
 	if options.verbose:
-		print "Done"
+		print "Dictionary sent" # enqueued by socket
 except zmq.ZMQError as e:
 	if options.verbose:
 		print "ZMQ error encountered!"
 	logger.warning("Warning: client was unable to send data")
-
+	exit(1)
+# Issue: client may hang after pushing info due to PULL socket's 
+# linger functionality ; happens only if collector isn't running
+push_socket.setsockopt(zmq.LINGER, 5000)
+# No way of detecting whether collector ever got message...? Maybe use poller?
 # Issue: client running without subscriber and collector will hang
 # However, can't manually exit out with os._exit(0)
 # It will prevent subscriber and collector from ever getting json

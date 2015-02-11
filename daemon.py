@@ -14,7 +14,7 @@ logger = labstatslogger.logger
 class Daemon:
 	def __init__(self, pidfile, stdin='/dev/null', stdout='/dev/null', stderr='/dev/null'):
 		self.stdin = stdin
-		self.stdout = stdout # try sys.stdout?
+		self.stdout = stdout # must pipe to /dev/null, possible log output however?
 		self.stderr = stderr
 		self.pidfile = pidfile
 	
@@ -61,8 +61,8 @@ class Daemon:
 		pid = str(os.getpid())
 		print 'PID is ', pid
 		file(self.pidfile,'w+').write("%s\n" % pid)
-		if file(self.pidfile, 'r'):
-			print 'It\'s here...'
+		#if file(self.pidfile, 'r'):
+			#print 'It\'s here...'
 	
 	def delpid(self):
 		os.remove(self.pidfile)
@@ -85,7 +85,7 @@ class Daemon:
 			sys.exit(1)
 		
 		# Start the daemon
-		print 'Attempting start daemonize...I\'m in daemon.py'
+		print 'Attempting start daemonize...I\'m in daemon.py' # last output other than fork pids
 		self.daemonize()
 		print 'Daemonize done... now let\'s run self while in daemon.py'
 		self.run()
