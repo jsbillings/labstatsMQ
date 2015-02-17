@@ -1,20 +1,11 @@
 #!/usr/bin/python
 
-import os
+import os, sys
 import socket
 from datetime import datetime
 import logging
 from logging import handlers
 from subprocess import Popen, PIPE
-
-# TODO 
-# According to os.getpid() in both logger and client, they share the same pid-
-# Might require multiprocessing to stop processname from always being MainProcess, or another library
-
-# When labstatslogger is run directly, labstatslogger's __name__ == "__main__"
-# Else when run via the client (by importing it), labstatslogger's __name__ == "labstatslogger".
-# When running the client and labstatslogger is imported, client's __name__ == __main__
-# However, client's __name__ now == "labstatsclient"
 
 if __name__ == "__main__": # Should never run
     pass
@@ -39,7 +30,8 @@ else:
     # Jan 13 13:30:23 caen-sysstdp03.engin.umich.edu MainProcess[5103]: Logger set up successfully
     # TODO: change MainProcess to labstatsclient
     datefmt = datetime.now().strftime('%b %d %H:%M:%S')
-    formatter = logging.Formatter(fmt = datefmt + ' ' + host_name + ' ' + '%(processName)s[%(process)d]: %(message)s')
+    filename = sys.argv[0].split('.')[0]
+    formatter = logging.Formatter(fmt = datefmt + ' ' + host_name + ' ' + filename +'[%(process)d]: %(message)s')
 
     handler.setFormatter(formatter)
     logger.addHandler(handler)
