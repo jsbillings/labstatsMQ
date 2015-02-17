@@ -3,73 +3,76 @@ import zmq
 import argparse
 import logging
 import labstatslogger
-import sys, os, time
+import sys, os, time, signal
 from daemon import Daemon
 
-# TODO: clean up pidfile after it closes abnormally
+directory = "/var/run/labstats/"
 logger = labstatslogger.logger
 
-context = zmq.Context()
-subscriber = context.socket(zmq.SUB)
-subscriber.setsockopt(zmq.SUBSCRIBE,'')
+def verbose_print(message):
+    if options.verbose:
+        print message
 
-directory = "/var/run/labstats/"
+def clean_quit():
+    if options.daemon:
+        daemon.delpid()
+    exit(1)
 
-def start_sockets():
+# If collector is killed manually, clean up and quit
+def sigterm_handler(signal, frame):
+    verbose_print("Caught a SIGTERM")
+    logger.info("Killed subscriber")
+    clean_quit()
+
+signal.signal(signal.SIGTERM, sigterm_handler) # activates only when SIGTERM detected
+
+def main():
+    logger.warning('in main')
+    # Set up ZMQ sockets and connections
+    context = zmq.Context()
+    subscriber = context.socket(zmq.SUB)
+    subscriber.setsockopt(zmq.SUBSCRIBE,'')
     try:
         subscriber.connect('tcp://localhost:5556')
     except zmq.ZMQError:
-        if options.verbose:
-            print 'Error: port 5556 already in use'
+        verbose_print('Error: port 5556 already in use')
         logger.warning('Warning: subscriber can\'t start, port 5556 already in use')
-        # Restart would do nothing unless old process quit, so just exit
-        if options.daemon:
-            daemon.delpid()
-        exit(1)
-
-def main():
-    # Set up ZMQ sockets and connections
-    start_sockets()
+        clean_quit()
+    # End init sockets, begin listening for messages
+    
     while True:
         try:
+            #raise zmq.ZMQError
             message = subscriber.recv_json()
-            if options.verbose:
-                print 'Received: \n', message
+            verbose_print('Received: \n', message)
         except zmq.ZMQError as e:
-            if options.verbose:
-                print "ZMQ error encountered: attempting restart..."
+            verbose_print("ZMQ error encountered: attempting restart...")
             logger.warning("Warning: subscriber encountered ZMQ error, restarting...")
+            del context, subscriber
             if options.daemon:
-                logger.warning("Restarting subscriber in 5 seconds...")
+                logger.debug("Restarting subscriber daemon in 5 seconds...")
                 daemon.restart() # sleep(5) while restarting
-                logger.warning("Restarted subscriber")
+                del context # needed?
             else: # non-daemonized restart
                 sys.stdout.flush()
                 time.sleep(5)
                 os.execl(sys.executable, *([sys.executable]+sys.argv))
         except OSError:
-            if options.verbose:
-                print 'Error: was not able to restart subscriber. Exiting...'
+            verbose_print('Error: was not able to restart subscriber. Exiting...')
             logger.warning('Warning: was not able to restart subscriber. Exiting...')
-            # delete pidfile
-            if options.daemon:
-                daemon.delpid()
-            exit(1)
+            clean_quit()
         except (KeyboardInterrupt, SystemExit):
-            if options.verbose:
-                print 'Quitting subscriber...'
+            verbose_print('\nQuitting subscriber...')
             logger.info("Quit subscriber")
-            # delete pidfile
-            if options.daemon:
-                daemon.delpid()
-            exit(0)
-    logger.warning("Exited while loop in subscriber")
+            clean_quit()
+        except Exception as e:
+            verbose_print("Generic exception caught")
+            logger.warning("Caught general exception in subscriber")
+            logger.debug("Repr:"+repr(e))
 
 class subscriberDaemon(Daemon):
     def run(self):
-        if options.verbose:
-            print "Begin daemonization..."
-            print "Subscriber PID: ", str(os.getpid())
+        verbose_print("Subscriber PID: ", os.getpid())
         main()
 
 if __name__ == '__main__':
@@ -90,6 +93,7 @@ if __name__ == '__main__':
                 os.mkdir(directory)
             except OSError as e:
                 logger.error("Encountered OSError while trying to create "+directory)
+                logger.debug("repr: "+repr(e))
                 exit(1)
         daemon = subscriberDaemon(directory+'subscriber.pid')
         daemon.start()
