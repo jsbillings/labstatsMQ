@@ -41,7 +41,8 @@ start() {
     echo
     #[ $retval -eq 0 ] && touch $lockfile
 }
-
+# ps -ef | grep collector | grep python | awk '{print $2}'
+# This gives you the pid only of the program
 stop() {
     echo -n $"Stopping $prog: "
     if [ -n "`pidfileofproc $exec`" ] ; then
