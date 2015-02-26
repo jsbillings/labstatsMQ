@@ -37,9 +37,6 @@ else:
     logger.setLevel(logging.WARNING)
     # DEBUG < INFO < WARNING < ERROR
     
-    logger.warning("Pathname is: "+pathname)
-    logger.warning("Filename is: "+filename)
-    
     # Updates on whether logger looked up hostname successfully
     if host_name == 'dnshost':
         logging.warning(warn_msg) # should return short description of herror
