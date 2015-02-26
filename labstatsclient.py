@@ -8,44 +8,6 @@ import json
 
 logger = labstatslogger.logger
 
-def verbose_print(message):
-	if options.verbose:
-		print message
-
-# Get client static settings
-remotehost = 'hwstats.engin.umich.edu'
-try:
-	remotehost = os.environ["LABSTATSSERVER"]
-except:
-	logger.info("Could not find remotehost")
-remoteport = 5555
-try:
-	remoteport = int(os.environ["LABSTATSPORT"])
-except:
-	logger.info("Could not find remoteport")
-
-# Process all flags
-# TODO: implement functionality of --interval
-parser = argparse.ArgumentParser()
-parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
-			help="Sets the remote server that accepts labstats data")
-parser.add_argument("--port", "-p", action="store", type=int, default=remoteport, dest="remoteport",
-			help="Sets the remote port to be used")
-parser.add_argument("--debug", "-d", action="store_true", default=False, dest="debug",
-			help="Turns on debug logging")
-parser.add_argument("--interval","-i", action="store",type=int, default=300, dest="interval", 
-			help="Sets the interval between reporting data")
-parser.add_argument("--verbose", "-v", action="store_true", default=False, dest = "verbose", 
-			help="Turns on verbosity")
-options = parser.parse_args()
-
-verbose_print("Verbosity on")
-if options.debug:
-	verbose_print("Set logger level to debug")
-	logger.setLevel(logging.DEBUG)
-
-del remotehost, remoteport # Delete these after parsing args
-
 data_dict = {
         # Static entries
         'version': "2.0",
@@ -226,27 +188,66 @@ def reset_data():
 	}
 	return out_dict
 
-# Gather data into data_dict
-data_dict.update(static_data())
-data_dict.update(update_data())
+def verbose_print(message):
+	if options.verbose:
+		print message
 
-verbose_print(json.dumps(data_dict))
+if __name__ == "__main__":
+	# Get client static settings
+	remotehost = 'hwstats.engin.umich.edu'
+	try:
+		remotehost = os.environ["LABSTATSSERVER"]
+	except:
+		logger.info("Could not find remotehost")
+	remoteport = 5555
+	try:
+		remoteport = int(os.environ["LABSTATSPORT"])
+	except:
+		logger.info("Could not find remoteport")
 
-# Push data_dict to socket
-context = zmq.Context()
-push_socket = context.socket(zmq.PUSH)
-push_socket.connect('tcp://localhost:5555')
-try:
-	push_socket.send_json(data_dict)
-	verbose_print("Dictionary sent to socket") # enqueued by socket
-except zmq.ZMQError as e:
-	verbose_print("ZMQ error encountered!")
-	logger.warning("Warning: client was unable to send data")
-	exit(1)
+	# Process all flags
+	# TODO: implement functionality of --interval
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
+				help="Sets the remote server that accepts labstats data")
+	parser.add_argument("--port", "-p", action="store", type=int, default=remoteport, dest="remoteport",
+				help="Sets the remote port to be used")
+	parser.add_argument("--debug", "-d", action="store_true", default=False, dest="debug",
+				help="Turns on debug logging")
+	parser.add_argument("--interval","-i", action="store",type=int, default=300, dest="interval", 
+				help="Sets the interval between reporting data")
+	parser.add_argument("--verbose", "-v", action="store_true", default=False, dest = "verbose", 
+				help="Turns on verbosity")
+	options = parser.parse_args()
 
-# Issue: client may hang after pushing info due to PULL socket's infinite
-# default linger functionality ; happens only if collector isn't running
-# However, can't manually exit after pushing to socket; will lose data
-# Maybe use a poller to detect that collector got message?
-push_socket.setsockopt(zmq.LINGER, 10000) # waits up to 10 seconds
+	verbose_print("Verbosity on")
+	if options.debug:
+		verbose_print("Set logger level to debug")
+		logger.setLevel(logging.DEBUG)
+
+	del remotehost, remoteport # Delete these after parsing args
+
+	# Gather data into data_dict
+	data_dict.update(static_data())
+	data_dict.update(update_data())
+
+	verbose_print(json.dumps(data_dict))
+
+	# Push data_dict to socket
+	context = zmq.Context()
+	push_socket = context.socket(zmq.PUSH)
+	push_socket.connect('tcp://localhost:5555')
+	try:
+		push_socket.send_json(data_dict)
+		verbose_print("Dictionary sent to socket") # enqueued by socket
+	except zmq.ZMQError as e:
+		verbose_print("ZMQ error encountered!")
+		logger.warning("Warning: client was unable to send data")
+		exit(1)
+
+	# Issue: client may hang after pushing info due to PULL socket's infinite
+	# default linger functionality ; happens only if collector isn't running
+	# However, can't manually exit after pushing to socket; will lose data
+	# Maybe use a poller to detect that collector got message?
+	push_socket.setsockopt(zmq.LINGER, 10000) # waits up to 10 seconds
 
