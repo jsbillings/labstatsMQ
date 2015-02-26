@@ -21,23 +21,25 @@ else:
     try:
         host_name = socket.gethostbyaddr(addr)[0] 
     except socket.herror, h:
-        warn_msg = 'Logger set up without successfully looking up hostname: error type ' + repr(h)
+        warn_msg = 'Logger set up without successfully looking up hostname. repr: ' + repr(h)
         host_name = 'dnshost' 
 
     logger = logging.getLogger(host_name)
     handler = logging.handlers.SysLogHandler(address = ('linuxlog.engin.umich.edu', 514)) #changed from 515 to 514
 
-    # Jan 13 13:30:23 caen-sysstdp03.engin.umich.edu MainProcess[5103]: Logger set up successfully
-    # TODO: change MainProcess to labstatsclient
     datefmt = datetime.now().strftime('%b %d %H:%M:%S')
-    filename = sys.argv[0].split('.')[0]
+    # Get name of file calling logger, without .py extension
+    filename = os.path.splitext(os.path.basename(sys.argv[0]))[0]
     formatter = logging.Formatter(fmt = datefmt + ' ' + host_name + ' ' + filename +'[%(process)d]: %(message)s')
 
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.setLevel(logging.WARNING)
     # DEBUG < INFO < WARNING < ERROR
-
+    
+    logger.warning("Pathname is: "+pathname)
+    logger.warning("Filename is: "+filename)
+    
     # Updates on whether logger looked up hostname successfully
     if host_name == 'dnshost':
         logging.warning(warn_msg) # should return short description of herror
