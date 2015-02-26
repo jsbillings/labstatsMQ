@@ -6,7 +6,6 @@ import sys, os, time, atexit
 from signal import SIGTERM 
 import labstatslogger, logging
 
-#TODO: convert stderr outputs to logger
 logger = labstatslogger.logger
 
 # A generic daemon class.
@@ -24,7 +23,7 @@ class Daemon:
 			pid = os.fork() 
 			if pid > 0:
 				# exit first parent
-				print "fork 1: ", pid
+				#print "fork 1: ", pid
 				sys.exit(0) # ALERT: exits upon daemonize
 		except OSError, e: 
 			logger.error("fork #1 failed: %d (%s)\n" % (e.errno, e.strerror))
@@ -40,12 +39,11 @@ class Daemon:
 			pid = os.fork() 
 			if pid > 0:
 				# exit from second parent
-				print "fork 2: ", pid #ALERT- exits upon daemonize
+				print "PID of fork 2: ", pid #ALERT- exits upon daemonize
 				sys.exit(0) 
 		except OSError, e: 
 			logger.error("Fork #2 failed: %d (%s)\n" % (e.errno, e.strerror))
 			sys.exit(1) 
-	
 		# redirect standard file descriptors
 		sys.stdout.flush()
 		sys.stderr.flush()
@@ -55,14 +53,15 @@ class Daemon:
 		os.dup2(si.fileno(), sys.stdin.fileno())
 		os.dup2(so.fileno(), sys.stdout.fileno())
 		os.dup2(se.fileno(), sys.stderr.fileno())
-		print os.getpid()
+		#print os.getpid()
 		# write pidfile
 		atexit.register(self.delpid)
 		pid = str(os.getpid())
-		print 'PID is ', pid
-		file(self.pidfile,'w+').write("%s\n" % pid)
-		#if file(self.pidfile, 'r'):
-			#print 'It\'s here...'
+		try:
+			file(self.pidfile,'w+').write("%s\n" % pid)
+		except Exception as e:
+			logger.warning("Pidfile write failed. No permissions?")
+			logger.debug("Repr: "+repr(e))
 	
 	def delpid(self):
 		os.remove(self.pidfile)
@@ -85,9 +84,7 @@ class Daemon:
 			sys.exit(1)
 		
 		# Start the daemon
-		print 'Attempting start daemonize...I\'m in daemon.py' # last output other than fork pids
 		self.daemonize()
-		print 'Daemonize done... now let\'s run self while in daemon.py'
 		self.run()
 
 	def stop(self):
