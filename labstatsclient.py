@@ -6,31 +6,25 @@ from subprocess import Popen, PIPE
 import labstatslogger, logging
 import json
 
-__name__ = 'labstatsclient'
 logger = labstatslogger.logger
-'''
-if sys.platform.startswith("linux"):
-	print 'is linux'
-	import ctypes
-	from ctypes.util import find_library
-	libc = ctypes.CDLL(find_library('c'))
-	PR_SET_NAME = 15
-	libc.prctl(PR_SET_NAME, ctypes.c_char_p("labstatsclient"), 0, 0, 0)
-'''
 
-# Client static settings
+def verbose_print(message):
+	if options.verbose:
+		print message
+
+# Get client static settings
 remotehost = 'hwstats.engin.umich.edu'
 try:
 	remotehost = os.environ["LABSTATSSERVER"]
 except:
-	logger.debug("Could not find remotehost")
-
+	logger.info("Could not find remotehost")
 remoteport = 5555
 try:
 	remoteport = int(os.environ["LABSTATSPORT"])
 except:
-	logger.debug("Could not find remoteport")
+	logger.info("Could not find remoteport")
 
+# Process all flags
 # TODO: implement functionality of --interval
 parser = argparse.ArgumentParser()
 parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
@@ -42,18 +36,15 @@ parser.add_argument("--debug", "-d", action="store_true", default=False, dest="d
 parser.add_argument("--interval","-i", action="store",type=int, default=300, dest="interval", 
 			help="Sets the interval between reporting data")
 parser.add_argument("--verbose", "-v", action="store_true", default=False, dest = "verbose", 
-		        help="Turns on verbosity")
+			help="Turns on verbosity")
 options = parser.parse_args()
 
-if options.verbose:
-	print "Verbosity on"
+verbose_print("Verbosity on")
 if options.debug:
-	if options.verbose:
-		print "Set logger level to debug"
+	verbose_print("Set logger level to debug")
 	logger.setLevel(logging.DEBUG)
 
-del remotehost, remoteport 
-logger.info("Started logger in client")
+del remotehost, remoteport # Delete these after parsing args
 
 data_dict = {
         # Static entries
@@ -75,6 +66,7 @@ data_dict = {
         'loggedinusers': -1,
         'loggedinuserbool': False,
 }
+
 def static_data():
 	out_dict = dict()
 	out_dict['hostname'] = socket.getfqdn() 
@@ -82,6 +74,7 @@ def static_data():
 	try: 
 		dmi = open("/var/cache/dmi/dmi.info", 'r')
 	except Exception as e:
+		verbose_print("Exception encountered: could not open /var/cache/dmi/dmi.info")
 		logger.debug("Exception encountered: could not open /var/cache/dmi/dmi.info")
 		return out_dict
 	for line in dmi.readlines():
@@ -96,6 +89,7 @@ def static_data():
 	try:
 		meminfo = open('/proc/meminfo', 'r')
 	except Exception as e:
+		verbose_print("Exception encountered: could not open /proc/meminfo")
 		logger.debug("Exception encountered: could not open /proc/meminfo")
 		return out_dict
 	for line in meminfo.readlines():
@@ -109,6 +103,7 @@ def static_data():
 	try:
 		cpuinfo = open("/proc/cpuinfo", 'r')
 	except Exception as e:
+		verbose_print("Exception encountered: could not open /proc/cpuinfo")
 		logger.debug("Exception encountered: could not open /proc/cpuinfo")
 		return out_dict
 	procs = 0
@@ -124,6 +119,7 @@ def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
 	try:
 		meminfo = open("/proc/meminfo", "r")
 	except Exception as e:
+		verbose_print("Exception encountered: could not open /proc/meminfo")
 		logger.debug("Exception encountered: could not open /proc/meminfo")
 		return out_dict
 
@@ -145,6 +141,7 @@ def getpagefaults():
 	sarproc = Popen(['sar','-B'],stdout = PIPE)
 	sarout_raw = sarproc.communicate()[0]
 	if (sarproc.returncode != 0): # Note: will this check for all poss. errors?
+		verbose_print("Exception encountered: sar -B failed to communicate properly")
 		logger.debug("Exception encountered: sar -B failed to communicate properly")
 		return out_dict
 
@@ -165,6 +162,7 @@ def getcpuload():
 	try:
 		loadavg = open("/proc/loadavg", 'r')
 	except Exception as e:
+		verbose_print("Exception encountered: could not open /proc/loadavg")
 		logger.debug("Exception encountered: could not open /proc/loadavg")
 		return out_dict
 
@@ -185,6 +183,7 @@ def getusers():
 	whoproc = Popen(['who', '-us'], stdout=PIPE) 
 	who = whoproc.communicate()[0]
 	if (whoproc.returncode != 0):  # Note: will this check for all poss. errors?
+		verbose_print("Exception encountered: who -us failed to communicate properly")
 		logger.debug("Exception encountered: who -us failed to communicate properly")
 		return out_dict
 	# split the input on lines, and exclude the last line since it's blank
@@ -227,30 +226,27 @@ def reset_data():
 	}
 	return out_dict
 
+# Gather data into data_dict
 data_dict.update(static_data())
 data_dict.update(update_data())
 
-if options.verbose:
-	print json.dumps(data_dict)
+verbose_print(json.dumps(data_dict))
 
-# Push data to socket
+# Push data_dict to socket
 context = zmq.Context()
 push_socket = context.socket(zmq.PUSH)
 push_socket.connect('tcp://localhost:5555')
 try:
 	push_socket.send_json(data_dict)
-	if options.verbose:
-		print "Dictionary sent" # enqueued by socket
+	verbose_print("Dictionary sent to socket") # enqueued by socket
 except zmq.ZMQError as e:
-	if options.verbose:
-		print "ZMQ error encountered!"
+	verbose_print("ZMQ error encountered!")
 	logger.warning("Warning: client was unable to send data")
 	exit(1)
-# Issue: client may hang after pushing info due to PULL socket's 
-# linger functionality ; happens only if collector isn't running
-push_socket.setsockopt(zmq.LINGER, 5000)
-# No way of detecting whether collector ever got message...? Maybe use poller?
-# Issue: client running without subscriber and collector will hang
-# However, can't manually exit out with os._exit(0)
-# It will prevent subscriber and collector from ever getting json
+
+# Issue: client may hang after pushing info due to PULL socket's infinite
+# default linger functionality ; happens only if collector isn't running
+# However, can't manually exit after pushing to socket; will lose data
+# Maybe use a poller to detect that collector got message?
+push_socket.setsockopt(zmq.LINGER, 10000) # waits up to 10 seconds
 
