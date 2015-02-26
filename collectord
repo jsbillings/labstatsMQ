@@ -1,59 +1,58 @@
 #!/bin/sh
 #
-# collectord Starts/stop the "collector" daemon
+# collectord: Starts/stop the "collector" daemon
 #
-# chkconfig:   345 95 5
-# description: Runs commands scheduled by the "at" command at the time \
-#    specified when "at" was run, and runs batch commands when the load \
-#    average is low enough.
+# chkconfig:   
+# description: Starts/stops the python-based labstats collector daemon
 
 ### BEGIN INIT INFO
-# Provides: atd at batch
+# Provides: 
 # Required-Start: $local_fs
 # Required-Stop: $local_fs
 # Default-Start: 345
 # Default-Stop: 95
-# Short-Description: Starts/stop the "collector" daemon
-# Description:      Runs commands scheduled by the "at" command at the time 
-#    specified when "at" was run, and runs batch commands when the load 
-#    average is low enough.
+# Short-Description: Starts/stops the python-based labstats collector daemon
+# Description:  Starts/stops the python-based labstats collector daemon    
 ### END INIT INFO
+
+# Goes in /etc/rc.d/init.d
 
 # Source function library.
 . /etc/rc.d/init.d/functions
 
-exec=/afs/umich.edu/user/a/d/adrikim/labstatsMQ #temporary directory
+dir=/afs/umich.edu/user/a/d/adrikim/labstatsMQ #temporary directory
 prog="collector"
+
 #config=/etc/sysconfig/atd
-
 #[ -e /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
-
 #lockfile=/var/lock/subsys/$prog #not needed; scripts already check that?
 
 start() {
-    #[ -x $exec ] || exit 5
-    #[ -f $config ] || exit 6
-    echo -n $"Starting $prog: "
-    
-    ###daemon $exec $OPTS
-    python $exec/collector.py -d
-    retval=$?
-    echo
-    #[ $retval -eq 0 ] && touch $lockfile
-}
-# ps -ef | grep collector | grep python | awk '{print $2}'
-# This gives you the pid only of the program
-stop() {
-    echo -n $"Stopping $prog: "
-    if [ -n "`pidfileofproc $exec`" ] ; then
-        killproc $exec
-		RETVAL=3
-    else
-        failure $"Stopping $prog"
+    if [ $UID -ne 0 ] ; then
+	echo "User has insufficient privilege."
+	exit 4
     fi
+    
+    echo -n $"Starting $prog: " 
+    # Store arguments here:
+    # args=("$@")
+    # TODO: how to use args to change pidfile directory (if needed)?
+    python $dir/collector.py -d 
+    retval=$?
+}
+
+stop() {
+    if [ $UID -ne 0 ] ; then
+	echo "User has insufficient privilege."
+	exit 4
+    fi
+    
+    MY_PID=`ps -ef | grep collector | grep python | awk '{print $2}'`
+    echo -n "Stopping $prog: " $MY_PID
+    kill $MY_PID
+    RETVAL=3
     retval=$?
     echo
-    #[ $retval -eq 0 ] && rm -f $lockfile
 }
 
 restart() {
@@ -75,25 +74,26 @@ rh_status() {
 }
 
 rh_status_q() {
+    # 2>&1 means redirect stderr to stdout
     rh_status >/dev/null 2>&1
 }
 
 
 case "$1" in
     start)
-        rh_status_q && exit 0
-        $1
+	start
+        #rh_status_q && exit 0
         ;;
     stop)
-        rh_status_q || exit 0
-        $1
+        stop
+        #rh_status_q || exit 0
         ;;
     restart)
-        $1
+        restart
         ;;
     reload)
-        rh_status_q || exit 7
-        $1
+        #rh_status_q || exit 7
+        reload
         ;;
     force-reload)
         force_reload
