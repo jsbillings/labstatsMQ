@@ -4,20 +4,17 @@ import labstatslogger, logging, argparse
 from daemon import Daemon
 import sys, os, time
 import signal
-import traceback
 
-# TODO: clean up pidfile upon exit
-# TODO: switch repr(e) containing logs to debug
 logger = labstatslogger.logger
 
-#directory = "/var/run/labstats/"
-directory = "/tmp/labstats/"
+directory = "/var/run/labstats/"
+#directory = "/tmp/labstats/"
 
 # Cleans up pidfile if --daemon, then exits
 def clean_quit():
     if options.daemon:
         daemon.delpid()
-    logger.warning("Called clean_quit()")
+    logger.debug("Called clean_quit()")
     exit(1)
 
 # Prints status, warning, error msg if --verbose
@@ -28,17 +25,14 @@ def verbose_print(message):
 # If collector is killed manually, clean up and quit
 def sigterm_handler(signal, frame):
     verbose_print("Caught a SIGTERM")
+    logger.debug("Caught signal "+str(signal)) # signal 15 is SIGTERM
     logger.warning("Killed collector")
     clean_quit()
 
 signal.signal(signal.SIGTERM, sigterm_handler) # activates only when SIGTERM detected
 
-# Initialize PUSH, PUB sockets    
-
-def main():
-    verbose_print("PID: "+str(os.getpid()))
-    
-    # Start up sockets
+def main():   
+    # Initialize PUSH, PUB sockets 
     verbose_print('Starting sockets...')
     context = zmq.Context()
     client_collector = context.socket(zmq.PULL)
@@ -61,6 +55,7 @@ def main():
         try:
             # Recieve message from lab hosts
             verbose_print('Listening...')
+            logger.info("Collector is listening...")
             message = client_collector.recv_json()
             verbose_print("Received message:\n%s" % message)
             # Publish to subscribers
@@ -73,15 +68,13 @@ def main():
             logger.debug("repr: "+repr(e))
             # TODO: set limit on # of restarts? Can't loop here, would cycle infinitely
             if options.daemon:
-                logger.warning("restarting collector")
+                logger.warning("Restarting collector daemon in 5 seconds...")
                 daemon.restart() # sleeps for 5 seconds
+                del context # just in case?
             else: # restart the program without daemonize flag
                 sys.stdout.flush()
                 time.sleep(5)
                 os.execl(sys.executable, *([sys.executable]+sys.argv))
-            #verbose_print("Attempted restart unsuccessfully 5 times. Quitting...")
-            #logger.warning("Attempted restart unsuccessfully 5 times. Quitting...")
-            clean_quit()
             # if zmq error, log it, restart after 5-10 sec sleep delay (so it won't redo error)
             # it'll work if collector restarts and subscriber is still up
 
@@ -103,7 +96,7 @@ def main():
 
 class collectorDaemon(Daemon):
     def run(self):
-        verbose_print("PID: "+str(os.getpid()))
+        logger.info("Collector PID: "+str(os.getpid()))
         main()
 
 if __name__ == "__main__":
@@ -115,7 +108,7 @@ if __name__ == "__main__":
     parser.add_argument("--pidfile", "-p", action="store", default=directory,
                         dest="directory", help="Sets location of daemon's pidfile")
     options = parser.parse_args()
-    
+
     verbose_print("Verbosity on")
     if options.daemon:
         if not os.path.exists(directory):

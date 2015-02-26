@@ -6,6 +6,9 @@ import labstatslogger
 import sys, os, time, signal
 from daemon import Daemon
 
+# TODO: if subscriber is daemonized, where should output go?
+
+#directory = '/tmp/labstats/'
 directory = "/var/run/labstats/"
 logger = labstatslogger.logger
 
@@ -19,15 +22,20 @@ def clean_quit():
     exit(1)
 
 # If collector is killed manually, clean up and quit
+# issue: after above warning outputs to log, this will also output in log:
+# Feb 18 16:27:15 caen-webstudp01.engin.umich.edu abrt: detected unhandled Python exception in 
+# 'labstats-subscriber.py'
+# if daemon, also may output: Feb 24 13:18:59 caen-sysstdp03.engin.umich.edu abrt: can't 
+# communicate with ABRT daemon, is it running? [Errno 2] No such file or directory
 def sigterm_handler(signal, frame):
     verbose_print("Caught a SIGTERM")
-    logger.info("Killed subscriber")
+    logger.debug("Caught signal "+str(signal)) # signal 15 is SIGTERM
+    logger.warning("Killed subscriber")
     clean_quit()
 
 signal.signal(signal.SIGTERM, sigterm_handler) # activates only when SIGTERM detected
 
-def main():
-    logger.warning('in main')
+def main():   
     # Set up ZMQ sockets and connections
     context = zmq.Context()
     subscriber = context.socket(zmq.SUB)
@@ -38,13 +46,15 @@ def main():
         verbose_print('Error: port 5556 already in use')
         logger.warning('Warning: subscriber can\'t start, port 5556 already in use')
         clean_quit()
-    # End init sockets, begin listening for messages
-    
+    # Done initializing sockets, begin listening for messages
     while True:
         try:
-            #raise zmq.ZMQError
+            verbose_print("Waiting for message...")
+            logger.info("Waiting for message...")
             message = subscriber.recv_json()
-            verbose_print('Received: \n', message)
+            verbose_print("Received: ")
+            verbose_print(message)
+            logger.info('Done receiving...')
         except zmq.ZMQError as e:
             verbose_print("ZMQ error encountered: attempting restart...")
             logger.warning("Warning: subscriber encountered ZMQ error, restarting...")
@@ -52,7 +62,7 @@ def main():
             if options.daemon:
                 logger.debug("Restarting subscriber daemon in 5 seconds...")
                 daemon.restart() # sleep(5) while restarting
-                del context # needed?
+                del context # just in case?
             else: # non-daemonized restart
                 sys.stdout.flush()
                 time.sleep(5)
@@ -60,6 +70,7 @@ def main():
         except OSError:
             verbose_print('Error: was not able to restart subscriber. Exiting...')
             logger.warning('Warning: was not able to restart subscriber. Exiting...')
+            logger.debug("repr: "+repr(e))
             clean_quit()
         except (KeyboardInterrupt, SystemExit):
             verbose_print('\nQuitting subscriber...')
@@ -72,26 +83,25 @@ def main():
 
 class subscriberDaemon(Daemon):
     def run(self):
-        verbose_print("Subscriber PID: ", os.getpid())
+        logger.info("Subscriber PID: "+str(os.getpid()))
         main()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--verbose", "-v", action = "store_true", default = False, 
                         dest = "verbose", help = "Turns on verbosity flag")
-    parser.add_argument("--daemonize", "-d", action = "store_true", default = False, 
+    parser.add_argument("--daemon", "-d", action = "store_true", default = False, 
                         dest = "daemon", help = "Turns subscriber into daemon")
     parser.add_argument("--pidfile", "-p", action = "store", default = directory,
                         dest = "directory", help = "Sets location of daemon's pidfile")
     options = parser.parse_args()
 
-    if options.verbose:
-        print "Verbosity on"
+    verbose_print("Verbosity on")
     if options.daemon:
         if not os.path.exists(directory):
             try:
                 os.mkdir(directory)
-            except OSError as e:
+            except OSError as e: # bad directory, or no permissions
                 logger.error("Encountered OSError while trying to create "+directory)
                 logger.debug("repr: "+repr(e))
                 exit(1)
