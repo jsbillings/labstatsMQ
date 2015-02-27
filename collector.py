@@ -30,6 +30,7 @@ def sigterm_handler(signal, frame):
     clean_quit()
 
 signal.signal(signal.SIGTERM, sigterm_handler) # activates only when SIGTERM detected
+#TODO: (unimportant) might be useful to create a SIGHUP handler that closes/reopens any files or sockets it has open.
 
 def main():   
     # Initialize PUSH, PUB sockets 
@@ -67,6 +68,8 @@ def main():
             logger.warning("Warning: collector encountered ZMQ error, unable to pull/publish data. Restarting collector.")
             logger.debug("repr: "+repr(e))
             # TODO: set limit on # of restarts? Can't loop here, would cycle infinitely
+            # this would be a good use of an exponential backoff.  
+            # e.g the first time it waits 4 seconds, then 8 then 16 up to some limit
             if options.daemon:
                 logger.warning("Restarting collector daemon in 5 seconds...")
                 daemon.restart() # sleeps for 5 seconds

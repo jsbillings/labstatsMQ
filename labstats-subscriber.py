@@ -7,6 +7,9 @@ import sys, os, time, signal
 from daemon import Daemon
 
 # TODO: if subscriber is daemonized, where should output go?
+# to a log file of some sort would be the canonical answer. 
+# maybe /var/log/labstats/subscriber.log for now. 
+# this'll be a starting point for services that want to consume the data.
 
 #directory = '/tmp/labstats/'
 directory = "/var/run/labstats/"
@@ -27,6 +30,9 @@ def clean_quit():
 # 'labstats-subscriber.py'
 # if daemon, also may output: Feb 24 13:18:59 caen-sysstdp03.engin.umich.edu abrt: can't 
 # communicate with ABRT daemon, is it running? [Errno 2] No such file or directory
+# that shouldn't be an issue.  that's the abrt collector doing its job.
+# probably can't make it be quiet from the script itself.
+
 def sigterm_handler(signal, frame):
     verbose_print("Caught a SIGTERM")
     logger.debug("Caught signal "+str(signal)) # signal 15 is SIGTERM
@@ -34,6 +40,7 @@ def sigterm_handler(signal, frame):
     clean_quit()
 
 signal.signal(signal.SIGTERM, sigterm_handler) # activates only when SIGTERM detected
+# TODO: ditto the comment in collector.py about a SIGHUP handler.
 
 def main():   
     # Set up ZMQ sockets and connections
