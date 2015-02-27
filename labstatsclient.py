@@ -10,23 +10,27 @@ logger = labstatslogger.logger
 
 data_dict = {
         # Static entries
-        'version': "2.0",
-        'os': "L",
+        'clientVersion': "2.0",
+        'os': "Linux",
         'hostname': None,
+	'ip': None,
         'model': None,
-        'totalmem': -1,
-        'totalcommit': -1,
-        'totalcpus': -1,
+        'memPysTotal': -1, #in kb
+        'memVirtTotal': -1, #in kb
+        'cpuCoreCount': -1,
+	'product': None, #these three will be set to match logstash data
+	'version': None, #/etc/beaver/beaver.conf would be agood source
+	'edition': None, #TODO: implement these
 
         # Dynamic entries
-        'timestamp' : -1,
-        'usedmem': -1,
-        'committedmem': -1, 
+        'clientTimestamp' : -1,
+        'memPhysUsed': -1,
+        'memVirtUsed': -1, 
         'pagefaultspersec': -1,
-        'cpupercent': -1,
-        'cpuload': -1,
-        'loggedinusers': -1,
-        'loggedinuserbool': False,
+        'cpuPercent': -1,
+        'cpuLoad5': -1,
+        'userCount': -1,
+        'userAtConsole': False,
 }
 
 def static_data():
@@ -57,9 +61,9 @@ def static_data():
 	for line in meminfo.readlines():
 		memInfo = line.split()
 		if memInfo[0] == "MemTotal:":
-			out_dict['totalmem'] = memInfo[1]
+			out_dict['memPhysTotal'] = memInfo[1]
 		elif memInfo[0] == "CommitLimit:":
-			out_dict['totalcommit'] = memInfo[1]
+			out_dict['memVirtTotal'] = memInfo[1]
 	meminfo.close()
 	
 	try:
@@ -73,7 +77,7 @@ def static_data():
 		if line.find("processor\t") > -1:
 			procs += 1
 	cpuinfo.close()
-	out_dict['totalcpus'] = procs
+	out_dict['cpuCoreCount'] = procs
 	return out_dict
 	
 def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
@@ -94,8 +98,8 @@ def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
 			mfree = int(line.split()[1])
 		elif line.find('Committed_AS:') > -1:
 			committed = int(line.split()[1])
-	out_dict['usedmem'] = total - inactive-mfree
-	out_dict['committedmem'] = committed
+	out_dict['memPhysUsed'] = total - inactive-mfree
+	out_dict['memVirtUsed'] = committed
 	return out_dict
 
 def getpagefaults(): 
@@ -136,8 +140,8 @@ def getcpuload():
 	cpustats = cpustats.split('\n')[-2].split()[2:]
 	cpupercent = sum([float(x) for x in cpustats[:-1]])
 
-	out_dict = { 'cpuload': load,
-		     'cpupercent': cpupercent }
+	out_dict = { 'cpuLoad5': load,
+		     'cpuPercent': cpupercent }
 	return out_dict
 	
 def getusers():
@@ -154,8 +158,8 @@ def getusers():
 	users = [x.split()[0] for x in who.split('\n')[:-1]]
 	# set returns the unique set of entries, and has a length attribute
 	usercount = len(set(users))
-	out_dict = {'loggedinusers' : usercount, 
-		    'loggedinuserbool' : (usercount > 0)}
+	out_dict = {'userCount' : usercount, 
+		    'userAtConsole' : (usercount > 0)}
 	return out_dict 
 
 def update_data():
@@ -163,7 +167,7 @@ def update_data():
 	out_dict.update(getcpuload())
 	out_dict.update(getusers())
 	out_dict.update(getpagefaults())
-	out_dict['timestamp'] = time.strftime('%Y%m%d%H%M%S', time.gmtime())
+	out_dict['clientTimestamp'] = time.strftime('%Y%m%d%H%M%S', time.gmtime())
 	return out_dict
 
         #dynamic entries
@@ -177,6 +181,8 @@ def update_data():
         #'loggedinuserbool': False,
 	
 def reset_data():
+	#TODO: if this is used, update to match dictionary
+	#      otherwise delete as unneeded.
 	out_dict = {'timestamp' : -1,
                     'usedmem': -1,
                     'committedmem': -1,  
@@ -214,6 +220,7 @@ if __name__ == "__main__":
 				help="Sets the remote port to be used")
 	parser.add_argument("--debug", "-d", action="store_true", default=False, dest="debug",
 				help="Turns on debug logging")
+	#TODO: remove the interval stuff, since we'll be handling that externally
 	parser.add_argument("--interval","-i", action="store",type=int, default=300, dest="interval", 
 				help="Sets the interval between reporting data")
 	parser.add_argument("--verbose", "-v", action="store_true", default=False, dest = "verbose", 
@@ -236,6 +243,7 @@ if __name__ == "__main__":
 	# Push data_dict to socket
 	context = zmq.Context()
 	push_socket = context.socket(zmq.PUSH)
+	#TODO: this should probably use the host and port from above.
 	push_socket.connect('tcp://localhost:5555')
 	try:
 		push_socket.send_json(data_dict)
@@ -249,5 +257,6 @@ if __name__ == "__main__":
 	# default linger functionality ; happens only if collector isn't running
 	# However, can't manually exit after pushing to socket; will lose data
 	# Maybe use a poller to detect that collector got message?
+	# TODO: this should probably be a tunable.  
 	push_socket.setsockopt(zmq.LINGER, 10000) # waits up to 10 seconds
 
