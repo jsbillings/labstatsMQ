@@ -39,7 +39,7 @@ class Daemon:
 			pid = os.fork() 
 			if pid > 0:
 				# exit from second parent
-				print "PID of fork 2: ", pid #ALERT- exits upon daemonize
+				# print "PID of fork 2: ", pid #ALERT- exits upon daemonize
 				sys.exit(0) 
 		except OSError, e: 
 			logger.error("Fork #2 failed: %d (%s)\n" % (e.errno, e.strerror))
