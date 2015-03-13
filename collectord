@@ -1,58 +1,96 @@
 #!/bin/sh
 #
-# collectord: Starts/stop the "collector" daemon
+# collectord: Starts/stops the labstats "collector" daemon
 #
-# chkconfig:   
-# description: Starts/stops the python-based labstats collector daemon
+# chkconfig: 35 82 16
+# description: Starts/stops the labstats "collector" daemon
+# processname: collectord
+# pidfile: /var/run/labstats/collector.pid
 
 ### BEGIN INIT INFO
-# Provides: 
-# Required-Start: $local_fs
-# Required-Stop: $local_fs
-# Default-Start: 345
-# Default-Stop: 95
-# Short-Description: Starts/stops the python-based labstats collector daemon
-# Description:  Starts/stops the python-based labstats collector daemon    
+# Provides: collectord
+# Required-Start: $syslog $local_fs $network
+# Required-Stop: $syslog $local_fs $network
+# Default-Stop: 0 1 2 6
+# Default-Start: 3 5
+# Short-Description: Starts/stops the labstats "collector" daemon
+# Description: Starts a daemonized version of the labstats collector script. 
+#              Listens to port 5555 and publishes a JSON file containing the 
+#              current machine's statistics (eg. CPU load, used memory, 
+#              model etc.) to port 5556.
 ### END INIT INFO
 
+# TODO: check status (and if it's actually python) of collector correctly using
+#       stored pid/ reading the pid file
+# Does not need to take in other args for eg. moving pidfile directory
+# Something about sys config file and reading from it to detect running? or
+# settings?
+
 # Goes in /etc/rc.d/init.d
+# TODO: clean up
 
 # Source function library.
 . /etc/rc.d/init.d/functions
 
-dir=/afs/umich.edu/user/a/d/adrikim/labstatsMQ #temporary directory
+# Storage of python script and its directory.
+dir=/afs/umich.edu/user/a/d/adrikim/labstatsMQ # directory for now, keep it here
 prog="collector"
+progdir=$dir$prog.py
 
-#config=/etc/sysconfig/atd
+# Storage of pidfile and its directory.
+pidfile=/var/run/labstats/$prog.pid
+pidname="$prog.pid"
+PID=""
+
+#config=/etc/sysconfig/$prog # only if we need one later
 #[ -e /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
-#lockfile=/var/lock/subsys/$prog #not needed; scripts already check that?
 
 start() {
+    update_pid
+    # Checks your privilege. :^)
     if [ $UID -ne 0 ] ; then
+	failure
 	echo "User has insufficient privilege."
+	exit 4
+    elif [ ! -z "$PID" ] ; then
+	failure
+	echo "Instance of collector already seems to be running."
 	exit 4
     fi
     
-    echo -n $"Starting $prog: " 
-    # Store arguments here:
-    # args=("$@")
-    # TODO: how to use args to change pidfile directory (if needed)?
-    python $dir/collector.py -d 
-    retval=$?
+    # No need to try and process other flags.
+    python $dir/collector.py -d
+    success
+    echo $"Started $prog"
+    #retval=$?
+    #[ $retval -eq 0 ]
+    #return $retval
 }
 
 stop() {
+    # checks sudo/root
     if [ $UID -ne 0 ] ; then
-	echo "User has insufficient privilege."
+	failure
+	echo "Can't stop collector; user has insufficient privilege."
+	exit 4
+    fi
+
+    # Check that collector is actually running (check its pid)
+    update_pid 
+    if [ -z $PID ] ; then
+	failure
+	echo "PID not found. Collector not running?"
 	exit 4
     fi
     
-    MY_PID=`ps -ef | grep collector | grep python | awk '{print $2}'`
-    echo -n "Stopping $prog: " $MY_PID
-    kill $MY_PID
-    RETVAL=3
-    retval=$?
-    echo
+    # Stops collector
+    kill "$PID"
+    success 
+    echo "Stopped $prog"
+    #RETVAL=3
+    #retval=$?
+    # Script handles erasure of the pidfile
+    #return $retval
 }
 
 restart() {
@@ -69,15 +107,31 @@ force_reload() {
 }
 
 rh_status() {
-    # run checks to determine if the service is running or use generic status
-    status $prog
+    update_pid # return val of get_pid
+    if [ -z "$PID" ] ; then # PID is null; collector not running
+            echo "collector is not running"
+    else
+	echo "collector is running with pid" $PID
+    fi
+
+    #status $prog 
+    # Take a look at other init scripts on how they use sysconfig 
+    # to check status, eg. afstweaks
+}
+
+update_pid() {
+    if [ -f "$pidfile" ] ; then
+        PID=$(head -n 1 $pidfile)
+    else # Should we bother checking if the PID isn't there?                                  
+        PID=`ps -ef | grep collector | grep python | awk '{print $2}'`
+    fi
+    # can't return PID directly, will %256 on all output
 }
 
 rh_status_q() {
     # 2>&1 means redirect stderr to stdout
     rh_status >/dev/null 2>&1
 }
-
 
 case "$1" in
     start)
