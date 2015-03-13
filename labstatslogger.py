@@ -7,9 +7,9 @@ import logging
 from logging import handlers
 from subprocess import Popen, PIPE
 
-if __name__ == "__main__": # Should never run
-    pass
-else:
+# Get hostname function in order to hook logger successfully across modules
+# Returns tuple of IP address, then MAC address, then error message (if any)
+def get_hostname():
     # Gets IP address, MAC address for hostname
     addr_proc = Popen('ip addr show eth0', shell = True, stdout = PIPE)
     ip_info = addr_proc.communicate()[0]
@@ -22,7 +22,14 @@ else:
         host_name = socket.gethostbyaddr(addr)[0] 
     except socket.herror, h:
         warn_msg = 'Logger set up without successfully looking up hostname. repr: ' + repr(h)
-        host_name = 'dnshost' 
+        host_name = 'dnshost'
+    return host_name, mac, warn_msg
+
+if __name__ == "__main__": # Should never run
+    pass
+else:
+    host_name = get_hostname()[0]
+    warn_msg = get_hostname()[2]
 
     logger = logging.getLogger(host_name)
     handler = logging.handlers.SysLogHandler(address = ('linuxlog.engin.umich.edu', 514)) #changed from 515 to 514
