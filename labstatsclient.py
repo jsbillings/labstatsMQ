@@ -12,31 +12,39 @@ data_dict = {
         # Static entries
         'clientVersion': "2.0",
         'os': "Linux",
-        'hostname': None,
-	'ip': None,
-        'model': None,
-        'memPysTotal': -1, #in kb
-        'memVirtTotal': -1, #in kb
-        'cpuCoreCount': -1,
-	'product': None, #these three will be set to match logstash data
-	'version': None, #/etc/beaver/beaver.conf would be agood source
-	'edition': None, #TODO: implement these
+        'hostname': None, # 1
+	'ip': None, # 2
+        'model': None, # 3
+        'memPhysTotal': -1, #in kb # 4
+        'memVirtTotal': -1, #in kb # 5
+        'cpuCoreCount': -1, # was totalcpus # 6
+	'product': None, #these three will be set to match logstash data # 7
+	'version': None, #/etc/beaver.conf would be a good source # 8
+	'edition': None, #TODO: implement these # 9
 
         # Dynamic entries
-        'clientTimestamp' : -1,
-        'memPhysUsed': -1,
-        'memVirtUsed': -1, 
+        'clientTimestamp' : -1, #was timestamp
+        'memPhysUsed': -1, #was usedmem
+        'memVirtUsed': -1, # was committedmem
         'pagefaultspersec': -1,
-        'cpuPercent': -1,
-        'cpuLoad5': -1,
-        'userCount': -1,
-        'userAtConsole': False,
+        'cpuPercent': -1, #was cpupercent
+        'cpuLoad5': -1, #was cpuload #cpuLoad or cpuLoad5?
+        'userCount': -1, #was loggedinusers
+        'userAtConsole': False, #was loggedinuserbool
 }
 
 def static_data():
 	out_dict = dict()
+	# 1. Gets hostname of the current machine
 	out_dict['hostname'] = socket.getfqdn() 
+	
+	# 2. Gets IP address
+	addr_proc = Popen('ip addr show eth0', shell = True, stdout = PIPE)
+	ip_info = addr_proc.communicate()[0]
+	addr = ip_info.split('inet')[1].strip().split('/')[0].strip()
+	out_dict['ip'] = addr
 
+	# 3. Gets manufacturer and product name -> model of machine
 	try: 
 		dmi = open("/var/cache/dmi/dmi.info", 'r')
 	except Exception as e:
@@ -51,7 +59,7 @@ def static_data():
 			model = sysInfo[1]
 	out_dict['model'] = ' '.join([system,model]) 
 	dmi.close()
-	
+	# 4. 5. Gets total physical, virtual memory
 	try:
 		meminfo = open('/proc/meminfo', 'r')
 	except Exception as e:
@@ -65,7 +73,7 @@ def static_data():
 		elif memInfo[0] == "CommitLimit:":
 			out_dict['memVirtTotal'] = memInfo[1]
 	meminfo.close()
-	
+	# 6. Gets no. of CPU cores
 	try:
 		cpuinfo = open("/proc/cpuinfo", 'r')
 	except Exception as e:
@@ -78,6 +86,51 @@ def static_data():
 			procs += 1
 	cpuinfo.close()
 	out_dict['cpuCoreCount'] = procs
+	
+	# 7. 8. 9. Product, Version, Edition
+	out_dict.update(getproduct())
+	out_dict.update(getversion())
+	out_dict.update(getedition())
+
+	return out_dict
+
+# 'product': None, #these three will be set to match logstash data
+# local environment variable
+def getproduct():
+	out_dict = dict()
+	try:
+		edition = os.environ['product']
+	except Exception as e:
+		verbose_print("Exception encountered: local environment variable \"product\" not found")
+		logger.debug("Exception encountered: local environment variable \"product\" not found")
+	return out_dict
+	
+# 'version': None, #/etc/beaver.conf would be a good source
+# Is either 0 or 1 to signify old/new according to docs
+def getversion():
+	out_dict = dict()
+	try:
+		beaverfile = open('/etc/beaver.conf', 'r')
+	except Exception as e:
+		verbose_print("Exception encountered: could not open /etc/beaver.conf")
+		logger.debug("Exception encountered: could not open /etc/beaver.conf")
+		return out_dict
+	# Find line containing "logstash_version"
+	for line in beaverfile.readlines():
+		if line.find("logstash_version"):
+			version = line.split()[0] # change to 1
+	out_dict["version"] = version
+	return out_dict
+	
+# 'edition': None, #TODO: implement these
+# also local environment var
+def getedition():
+	out_dict = dict()
+	try:
+		edition = os.environ['edition']
+	except Exception as e:
+		verbose_print("Exception encountered: local environment variable \"edition\" not found")
+		logger.debug("Exception encountered: local environment variable \"edition\" not found")
 	return out_dict
 	
 def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
@@ -106,7 +159,7 @@ def getpagefaults():
 	out_dict = dict()
 	sarproc = Popen(['sar','-B'],stdout = PIPE)
 	sarout_raw = sarproc.communicate()[0]
-	if (sarproc.returncode != 0): # Note: will this check for all poss. errors?
+	if (sarproc.returncode != 0): 
 		verbose_print("Exception encountered: sar -B failed to communicate properly")
 		logger.debug("Exception encountered: sar -B failed to communicate properly")
 		return out_dict
@@ -148,7 +201,7 @@ def getusers():
 	out_dict = dict()
 	whoproc = Popen(['who', '-us'], stdout=PIPE) 
 	who = whoproc.communicate()[0]
-	if (whoproc.returncode != 0):  # Note: will this check for all poss. errors?
+	if (whoproc.returncode != 0):  
 		verbose_print("Exception encountered: who -us failed to communicate properly")
 		logger.debug("Exception encountered: who -us failed to communicate properly")
 		return out_dict
@@ -190,7 +243,10 @@ def reset_data():
                     'cpupercent': -1,
                     'cpuload': -1,
                     'loggedinusers': -1,
-                    'loggedinuserbool': False
+                    'loggedinuserbool': False,
+		    'product': None,
+		    'version': None,
+		    'edition': None,
 	}
 	return out_dict
 
@@ -212,17 +268,15 @@ if __name__ == "__main__":
 		logger.info("Could not find remoteport")
 
 	# Process all flags
-	# TODO: implement functionality of --interval
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
 				help="Sets the remote server that accepts labstats data")
 	parser.add_argument("--port", "-p", action="store", type=int, default=remoteport, dest="remoteport",
 				help="Sets the remote port to be used")
+	parser.add_argument("--linger", "-l", action="store", type=int, default=10000, dest="linger",
+			        help="Sets the LINGER time (in ms) of the push socket")
 	parser.add_argument("--debug", "-d", action="store_true", default=False, dest="debug",
 				help="Turns on debug logging")
-	#TODO: remove the interval stuff, since we'll be handling that externally
-	parser.add_argument("--interval","-i", action="store",type=int, default=300, dest="interval", 
-				help="Sets the interval between reporting data")
 	parser.add_argument("--verbose", "-v", action="store_true", default=False, dest = "verbose", 
 				help="Turns on verbosity")
 	options = parser.parse_args()
@@ -245,6 +299,7 @@ if __name__ == "__main__":
 	push_socket = context.socket(zmq.PUSH)
 	#TODO: this should probably use the host and port from above.
 	push_socket.connect('tcp://localhost:5555')
+	#push_socket.connect('tcp://'+options.remotehost+':'+options.remoteport)
 	try:
 		push_socket.send_json(data_dict)
 		verbose_print("Dictionary sent to socket") # enqueued by socket
@@ -257,6 +312,10 @@ if __name__ == "__main__":
 	# default linger functionality ; happens only if collector isn't running
 	# However, can't manually exit after pushing to socket; will lose data
 	# Maybe use a poller to detect that collector got message?
-	# TODO: this should probably be a tunable.  
-	push_socket.setsockopt(zmq.LINGER, 10000) # waits up to 10 seconds
+	# TODO: this should probably be attunable.  
+	push_socket.setsockopt(zmq.LINGER, options.linger) # waits up to 10 seconds by default
 
+	if (options.debug):
+		# Reset logger to WARNING after client quits
+		logger.setLevel(level.WARNING)
+	
