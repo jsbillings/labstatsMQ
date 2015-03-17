@@ -270,7 +270,7 @@ if __name__ == "__main__":
 	try:
 		push_socket.send_json(data_dict)
 		verbose_print("Dictionary sent to socket ") # enqueued by socket
-		print 'tcp://'+options.remotehost+':'+str(options.remoteport)
+		#print 'tcp://'+options.remotehost+':'+str(options.remoteport)
 	except zmq.ZMQError as e:
 		verbose_print("ZMQ error encountered!")
 		logger.warning("Warning: client was unable to send data")
