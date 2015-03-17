@@ -15,22 +15,22 @@ data_dict = {
         'hostname': None, # 1
 	'ip': None, # 2
         'model': None, # 3
-        'memPhysTotal': -1, #in kb # 4
-        'memVirtTotal': -1, #in kb # 5
-        'cpuCoreCount': -1, # was totalcpus # 6
+        'memPhysTotal': -1, # 4
+        'memVirtTotal': -1, # 5
+        'cpuCoreCount': -1, # 6
 	'product': None, #these three will be set to match logstash data # 7
-	'version': None, #/etc/beaver.conf would be a good source # 8
-	'edition': None, #TODO: implement these # 9
+	'version': None, # 8
+	'edition': None, # 9
 
         # Dynamic entries
-        'clientTimestamp' : -1, #was timestamp
-        'memPhysUsed': -1, #was usedmem
-        'memVirtUsed': -1, # was committedmem
+        'clientTimestamp' : -1,
+        'memPhysUsed': -1, 
+        'memVirtUsed': -1, 
         'pagefaultspersec': -1,
-        'cpuPercent': -1, #was cpupercent
-        'cpuLoad5': -1, #was cpuload #cpuLoad or cpuLoad5?
-        'userCount': -1, #was loggedinusers
-        'userAtConsole': False, #was loggedinuserbool
+        'cpuPercent': -1,
+        'cpuLoad': -1, #cpuLoad or cpuLoad5?
+        'userCount': -1, 
+        'userAtConsole': False, 
 }
 
 def static_data():
@@ -87,50 +87,44 @@ def static_data():
 	cpuinfo.close()
 	out_dict['cpuCoreCount'] = procs
 	
-	# 7. 8. 9. Product, Version, Edition
+	# 7. 8. 9. Gets product, version, edition
 	out_dict.update(getproduct())
 	out_dict.update(getversion())
 	out_dict.update(getedition())
 
 	return out_dict
 
-# 'product': None, #these three will be set to match logstash data
-# local environment variable
 def getproduct():
 	out_dict = dict()
-	try:
-		edition = os.environ['product']
-	except Exception as e:
-		verbose_print("Exception encountered: local environment variable \"product\" not found")
-		logger.debug("Exception encountered: local environment variable \"product\" not found")
+	prod_proc = Popen("sed -r -e 's/.*([0-9]\\.[0-9]+).*/RHEL\\1-CLSE/' /etc/redhat-release", 
+                  shell = True, stdout = PIPE)
+	product = prod_proc.communicate()[0].strip()
+	if (prod_proc.returncode != 0):
+	    verbose_print("Exception encountered: could not get CAEN product info")
+	    logger.debug("Exception encountered: could not get CAEN product info")
+	out_dict['product'] = product
 	return out_dict
 	
-# 'version': None, #/etc/beaver.conf would be a good source
-# Is either 0 or 1 to signify old/new according to docs
 def getversion():
 	out_dict = dict()
-	try:
-		beaverfile = open('/etc/beaver.conf', 'r')
-	except Exception as e:
-		verbose_print("Exception encountered: could not open /etc/beaver.conf")
-		logger.debug("Exception encountered: could not open /etc/beaver.conf")
-		return out_dict
-	# Find line containing "logstash_version"
-	for line in beaverfile.readlines():
-		if line.find("logstash_version"):
-			version = line.split()[0] # change to 1
-	out_dict["version"] = version
+	ver_proc = Popen("grep CLSE /etc/caen-release | sed -e 's/.*-//'", 
+			 shell = True, stdout = PIPE)
+	version = ver_proc.communicate()[0].strip()
+	if (ver_proc.returncode != 0):
+		verbose_print("Exception encountered: unable to get CAEN version")
+		logger.debug("Exception encountered: unable to get CAEN version")
+	out_dict['version'] = version
 	return out_dict
-	
-# 'edition': None, #TODO: implement these
-# also local environment var
+
 def getedition():
 	out_dict = dict()
-	try:
-		edition = os.environ['edition']
-	except Exception as e:
-		verbose_print("Exception encountered: local environment variable \"edition\" not found")
-		logger.debug("Exception encountered: local environment variable \"edition\" not found")
+	ed_proc = Popen("grep edition /etc/caen-release | sed -r -e 's/(al|)-.*//'", 
+			 shell = True, stdout = PIPE)
+	edition = ed_proc.communicate()[0].strip()
+	if (ed_proc.returncode != 0):
+		verbose_print("Exception encountered: unable to get CAEN edition")
+		logger.debug("Exception encountered: unable to get CAEN edition")
+	out_dict['edition'] = edition
 	return out_dict
 	
 def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
@@ -193,7 +187,7 @@ def getcpuload():
 	cpustats = cpustats.split('\n')[-2].split()[2:]
 	cpupercent = sum([float(x) for x in cpustats[:-1]])
 
-	out_dict = { 'cpuLoad5': load,
+	out_dict = { 'cpuLoad': load,
 		     'cpuPercent': cpupercent }
 	return out_dict
 	
@@ -223,33 +217,6 @@ def update_data():
 	out_dict['clientTimestamp'] = time.strftime('%Y%m%d%H%M%S', time.gmtime())
 	return out_dict
 
-        #dynamic entries
-        #x'timestamp' : -1
-        #x'usedmem': -1,
-        #x'committedmem': -1, 
-        #'pagefaultspersec': -1,
-        #'cpupercent': -1,
-        #'cpuload': -1,
-        #'loggedinusers': -1,
-        #'loggedinuserbool': False,
-	
-def reset_data():
-	#TODO: if this is used, update to match dictionary
-	#      otherwise delete as unneeded.
-	out_dict = {'timestamp' : -1,
-                    'usedmem': -1,
-                    'committedmem': -1,  
-                    'pagefaultspersec': -1,
-                    'cpupercent': -1,
-                    'cpuload': -1,
-                    'loggedinusers': -1,
-                    'loggedinuserbool': False,
-		    'product': None,
-		    'version': None,
-		    'edition': None,
-	}
-	return out_dict
-
 def verbose_print(message):
 	if options.verbose:
 		print message
@@ -260,12 +227,12 @@ if __name__ == "__main__":
 	try:
 		remotehost = os.environ["LABSTATSSERVER"]
 	except:
-		logger.info("Could not find remotehost")
+		logger.warning("Could not find remotehost")
 	remoteport = 5555
 	try:
 		remoteport = int(os.environ["LABSTATSPORT"])
 	except:
-		logger.info("Could not find remoteport")
+		logger.warning("Could not find remoteport")
 
 	# Process all flags
 	parser = argparse.ArgumentParser()
@@ -298,11 +265,12 @@ if __name__ == "__main__":
 	context = zmq.Context()
 	push_socket = context.socket(zmq.PUSH)
 	#TODO: this should probably use the host and port from above.
-	push_socket.connect('tcp://localhost:5555')
-	#push_socket.connect('tcp://'+options.remotehost+':'+options.remoteport)
+	#push_socket.connect('tcp://localhost:5555')
+	push_socket.connect('tcp://'+options.remotehost+':'+str(options.remoteport))
 	try:
 		push_socket.send_json(data_dict)
-		verbose_print("Dictionary sent to socket") # enqueued by socket
+		verbose_print("Dictionary sent to socket ") # enqueued by socket
+		print 'tcp://'+options.remotehost+':'+str(options.remoteport)
 	except zmq.ZMQError as e:
 		verbose_print("ZMQ error encountered!")
 		logger.warning("Warning: client was unable to send data")
@@ -311,11 +279,11 @@ if __name__ == "__main__":
 	# Issue: client may hang after pushing info due to PULL socket's infinite
 	# default linger functionality ; happens only if collector isn't running
 	# However, can't manually exit after pushing to socket; will lose data
-	# Maybe use a poller to detect that collector got message?
-	# TODO: this should probably be attunable.  
+	# This will allow push socket to "linger" for the set time
+	# It will then quit manually or auto quit after successful transfer of data
 	push_socket.setsockopt(zmq.LINGER, options.linger) # waits up to 10 seconds by default
 
 	if (options.debug):
 		# Reset logger to WARNING after client quits
-		logger.setLevel(level.WARNING)
+		logger.setLevel(logging.WARNING)
 	
