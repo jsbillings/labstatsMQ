@@ -23,8 +23,7 @@ class Daemon:
 			pid = os.fork() 
 			if pid > 0:
 				# exit first parent
-				#print "fork 1: ", pid
-				sys.exit(0) # ALERT: exits upon daemonize
+				sys.exit(0)
 		except OSError, e: 
 			logger.error("fork #1 failed: %d (%s)\n" % (e.errno, e.strerror))
 			sys.exit(1)
@@ -39,7 +38,6 @@ class Daemon:
 			pid = os.fork() 
 			if pid > 0:
 				# exit from second parent
-				# print "PID of fork 2: ", pid #ALERT- exits upon daemonize
 				sys.exit(0) 
 		except OSError, e: 
 			logger.error("Fork #2 failed: %d (%s)\n" % (e.errno, e.strerror))
@@ -53,7 +51,6 @@ class Daemon:
 		os.dup2(si.fileno(), sys.stdin.fileno())
 		os.dup2(so.fileno(), sys.stdout.fileno())
 		os.dup2(se.fileno(), sys.stderr.fileno())
-		#print os.getpid()
 		# write pidfile
 		atexit.register(self.delpid)
 		pid = str(os.getpid())
@@ -62,6 +59,7 @@ class Daemon:
 		except Exception as e:
 			logger.warning("Pidfile write failed. No permissions?")
 			logger.debug("Repr: "+repr(e))
+			sys.exit(1)
 	
 	def delpid(self):
 		os.remove(self.pidfile)

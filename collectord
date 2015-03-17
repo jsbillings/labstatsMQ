@@ -47,7 +47,7 @@ PID=""
 
 start() {
     update_pid
-    # Checks your privilege. :^)
+    # Checks your privilege. 
     if [ $UID -ne 0 ] ; then
 	failure
 	echo "User has insufficient privilege."
