@@ -6,6 +6,8 @@ import labstatslogger
 import sys, os, time, signal
 from daemon import Daemon
 
+# TODO: replace repr() with str() as needed
+# repr shows exception type too; str only shows message (IF ANY)
 directory = "/var/run/labstats/"
 logger = labstatslogger.logger
 
@@ -32,19 +34,40 @@ def output_log(to_write):
         for line in to_write:
             logout.write(line)
         logout.close()
+    except OSError as e:
+        verbose_print("Error: could not write to subscriber.log. No root access.")
+        logger.warning("Error: could not write to subscriber.log. No root access.")
+        return
     except Exception as e:
-        verbose_print(repr(e))
-        verbose_print("Error: could not open subscriber.log. No root access.")
-        logger.warning("Error: could not open subscriber.log. No root access.")
+        verbose_print("Error: could not write to subscriber.log. "+repr(e))
+        logger.warning("Error: could not write to subscriber.log. "+repr(e))
+        return
 
 # If collector is killed manually, clean up and quit
-def signal_handler(signal, frame):
-    verbose_print("Caught a termination signal "+signal)
-    logger.warning("Killed subscriber with signal "+signal)
+def sigterm_handler(signal, frame):
+    verbose_print("Caught a SIGTERM")
+    logger.warning("Subscriber killed via SIGTERM")
     clean_quit()
 
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGHUP, signal_handler)
+# If SIGHUP received, do "soft restart" of sockets and files
+def sighup_handler(signal, frame):
+    verbose_print("Caught a SIGHUP")
+    logger.warning("Collector received a SIGHUP")
+    soft_restart()
+
+def soft_restart():
+    '''
+    if ntries == 0:
+        verbose_print("Too many restart tries, quitting...")
+        logger.warning("Too many restart tries, quitting...")
+        clean_quit()
+    '''
+    context.destroy() # should automatically close all sockets
+    time.sleep(prevtime)
+    main() # don't do daemon.restart() because of ntries
+
+signal.signal(signal.SIGTERM, sigterm_handler)
+signal.signal(signal.SIGHUP, sighup_handler)
 
 def main():   
     # Set up ZMQ sockets and connections
@@ -54,19 +77,17 @@ def main():
     try:
         subscriber.connect('tcp://localhost:5556')
     except zmq.ZMQError as e:
-        verbose_print('Error: could not connect to port 5556, is it already in use? Repr: '+repr(e))
-        logger.warning('Warning: subscriber can\'t start, port 5556 already in use? Repr: '+repr(e))
+        verbose_print('Error: could not connect to port 5556. '+str(e))
+        logger.warning('Error: could not connect to port 5556. '+str(e))
         clean_quit()
     # Done initializing sockets, begin listening for messages
     while True:
         try:
             verbose_print("Waiting for message...")
-            
             message = subscriber.recv_json()
-
             verbose_print("Received: ")
             verbose_print(message)
-            logger.warning("Received JSON")
+            logger.warning("Subscriber received JSON")
             
             # Output log if daemonized.
             if options.daemon:
@@ -76,13 +97,13 @@ def main():
         except zmq.ZMQError as e:
             verbose_print("ZMQ error encountered: attempting restart...")
             logger.warning("Warning: subscriber encountered ZMQ error, restarting...")
-            del context, subscriber
+            context.destroy()
 
             # TODO: Exponential backoff to be implemented here
             if options.daemon:
-                logger.warning("Restarting subscriber daemon in 5 seconds...")
+                logger.warning("Restarting subscriber daemon...")
                 daemon.restart() # sleep(5) while restarting
-                del context # just in case?
+                context.destroy() 
             else: # non-daemonized restart
                 sys.stdout.flush()
                 time.sleep(5)
@@ -95,16 +116,17 @@ def main():
         # TODO: this triggers (!) occasionally after daemonized process is killed.
         # Either this or "detected unhandled exception" by abrt, which can't be fixed.
         except OSError as e:
-            verbose_print('OSError: failed restart? Repr: '+repr(e)+'. Exiting...')
-            logger.warning('OSError: failed restart? Repr: '+repr(e)+'. Exiting...')
+            verbose_print('Error: '+str(e)+'. Quitting...')
+            logger.warning('Error: '+str(e)+'. Quitting...')
             clean_quit()
         except Exception as e:
-            verbose_print("Generic exception caught")
-            logger.warning("Caught general exception in subscriber, repr:"+repr(e))
+            verbose_print("Warning: "+str(e))
+            logger.warning("Warning: "+str(e))
+    verbose_print("Warning: too many restart tries. Quitting...")
+    logger.warning("Warning: too many restart tries. Quitting...")
 
 class subscriberDaemon(Daemon):
     def run(self):
-        logger.info("Subscriber PID: "+str(os.getpid()))
         main()
 
 if __name__ == '__main__':
@@ -123,7 +145,7 @@ if __name__ == '__main__':
             try:
                 os.mkdir(directory)
             except OSError as e: # bad directory, or no permissions
-                logger.error("Encountered OSError while trying to create "+directory+", repr: "+repr(e))
+                logger.error("Encountered OSError while trying to create "+directory+". "+str(e))
                 exit(1)
         daemon = subscriberDaemon(directory+'subscriber.pid')
         daemon.start()
