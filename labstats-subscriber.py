@@ -1,13 +1,10 @@
 #!/usr/bin/env python
 import zmq
-import argparse
-import logging
-import labstatslogger
-import sys, os, time, signal
+import sys, os, time, random, signal
+sys.dont_write_bytecode = True
+import logging, labstatslogger, argparse
 from daemon import Daemon
 
-# TODO: replace repr() with str() as needed
-# repr shows exception type too; str only shows message (IF ANY)
 directory = "/var/run/labstats/"
 logger = labstatslogger.logger
 
@@ -53,23 +50,14 @@ def sigterm_handler(signal, frame):
 def sighup_handler(signal, frame):
     verbose_print("Caught a SIGHUP")
     logger.warning("Collector received a SIGHUP")
-    soft_restart()
-
-def soft_restart():
-    '''
-    if ntries == 0:
-        verbose_print("Too many restart tries, quitting...")
-        logger.warning("Too many restart tries, quitting...")
-        clean_quit()
-    '''
-    context.destroy() # should automatically close all sockets
-    time.sleep(prevtime)
-    main() # don't do daemon.restart() because of ntries
+    context.destroy()
+    time.sleep(5)
+    main(3, 2000)
 
 signal.signal(signal.SIGTERM, sigterm_handler)
 signal.signal(signal.SIGHUP, sighup_handler)
 
-def main():   
+def main(ntries, ntime):   
     # Set up ZMQ sockets and connections
     context = zmq.Context()
     subscriber = context.socket(zmq.SUB)
@@ -81,7 +69,7 @@ def main():
         logger.warning('Error: could not connect to port 5556. '+str(e))
         clean_quit()
     # Done initializing sockets, begin listening for messages
-    while True:
+    while ntries > 0:
         try:
             verbose_print("Waiting for message...")
             message = subscriber.recv_json()
@@ -89,32 +77,23 @@ def main():
             verbose_print(message)
             logger.warning("Subscriber received JSON")
             
-            # Output log if daemonized.
+            # Output log if daemonized
             if options.daemon:
                 logger.warning("Dumping JSON into logfile")
                 output_log(json.dumps(message))
 
         except zmq.ZMQError as e:
-            verbose_print("ZMQ error encountered: attempting restart...")
-            logger.warning("Warning: subscriber encountered ZMQ error, restarting...")
+            verbose_print("Warning: ZMQ error- "+str(e)+". Restarting...")
+            logger.warning("Warning: ZMQ error- "+str(e)+". Restarting...")
+            # Exponential backoff runs here
             context.destroy()
-
-            # TODO: Exponential backoff to be implemented here
-            if options.daemon:
-                logger.warning("Restarting subscriber daemon...")
-                daemon.restart() # sleep(5) while restarting
-                context.destroy() 
-            else: # non-daemonized restart
-                sys.stdout.flush()
-                time.sleep(5)
-                os.execl(sys.executable, *([sys.executable]+sys.argv))
-
+            time.sleep(ntime / 1000)
+            ntime = (2 * ntime) + random.randint(0, 1000))
+            main(ntries - 1, ntime) 
         except (KeyboardInterrupt, SystemExit):
             verbose_print('\nQuitting subscriber...')
-            logger.warning("Quit subscriber")
+            logger.warning("Quitting subscriber...")
             clean_quit()
-        # TODO: this triggers (!) occasionally after daemonized process is killed.
-        # Either this or "detected unhandled exception" by abrt, which can't be fixed.
         except OSError as e:
             verbose_print('Error: '+str(e)+'. Quitting...')
             logger.warning('Error: '+str(e)+'. Quitting...')
@@ -122,12 +101,14 @@ def main():
         except Exception as e:
             verbose_print("Warning: "+str(e))
             logger.warning("Warning: "+str(e))
+    # Quits when all restart tries used up
     verbose_print("Warning: too many restart tries. Quitting...")
     logger.warning("Warning: too many restart tries. Quitting...")
+    clean_quit()
 
 class subscriberDaemon(Daemon):
     def run(self):
-        main()
+        main(3, 2000)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -150,4 +131,4 @@ if __name__ == '__main__':
         daemon = subscriberDaemon(directory+'subscriber.pid')
         daemon.start()
     else:
-        main()
+        main(3, 2000) # Default is 3 tries max, with starting restart time of 2 seconds
