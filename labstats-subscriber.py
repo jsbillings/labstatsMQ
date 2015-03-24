@@ -5,6 +5,7 @@ sys.dont_write_bytecode = True
 import logging, labstatslogger, argparse
 from daemon import Daemon
 
+# TODO: running as daemon then running as verbose only allows both to run?
 directory = "/var/run/labstats/"
 logger = labstatslogger.logger
 
@@ -36,8 +37,8 @@ def output_log(to_write):
         logger.warning("Error: could not write to subscriber.log. No root access.")
         return
     except Exception as e:
-        verbose_print("Error: could not write to subscriber.log. "+repr(e))
-        logger.warning("Error: could not write to subscriber.log. "+repr(e))
+        verbose_print("Error: could not write to subscriber.log. "+str(e).capitalize())
+        logger.warning("Error: could not write to subscriber.log. "+str(e).capitalize())
         return
 
 # If collector is killed manually, clean up and quit
@@ -65,8 +66,8 @@ def main(ntries, ntime):
     try:
         subscriber.connect('tcp://localhost:5556')
     except zmq.ZMQError as e:
-        verbose_print('Error: could not connect to port 5556. '+str(e))
-        logger.warning('Error: could not connect to port 5556. '+str(e))
+        verbose_print('Error: could not connect to port 5556. '+str(e).capitalize())
+        logger.warning('Error: could not connect to port 5556. '+str(e).capitalize())
         clean_quit()
     # Done initializing sockets, begin listening for messages
     while ntries > 0:
@@ -83,24 +84,24 @@ def main(ntries, ntime):
                 output_log(json.dumps(message))
 
         except zmq.ZMQError as e:
-            verbose_print("Warning: ZMQ error- "+str(e)+". Restarting...")
-            logger.warning("Warning: ZMQ error- "+str(e)+". Restarting...")
+            verbose_print("Warning: ZMQ error. "+str(e).capitalize()+". Restarting...")
+            logger.warning("Warning: ZMQ error. "+str(e).capitalize()+". Restarting...")
             # Exponential backoff runs here
             context.destroy()
             time.sleep(ntime / 1000)
-            ntime = (2 * ntime) + random.randint(0, 1000))
+            ntime = (2 * ntime) + random.randint(0, 1000)
             main(ntries - 1, ntime) 
         except (KeyboardInterrupt, SystemExit):
             verbose_print('\nQuitting subscriber...')
             logger.warning("Quitting subscriber...")
             clean_quit()
         except OSError as e:
-            verbose_print('Error: '+str(e)+'. Quitting...')
-            logger.warning('Error: '+str(e)+'. Quitting...')
+            verbose_print('Error: '+e.args[1]+'. Quitting...')
+            logger.warning('Error: '+e.args[1]+'. Quitting...')
             clean_quit()
         except Exception as e:
-            verbose_print("Warning: "+str(e))
-            logger.warning("Warning: "+str(e))
+            verbose_print("Warning: "+str(e)+".")
+            logger.warning("Warning: "+str(e)+".")
     # Quits when all restart tries used up
     verbose_print("Warning: too many restart tries. Quitting...")
     logger.warning("Warning: too many restart tries. Quitting...")
@@ -126,7 +127,8 @@ if __name__ == '__main__':
             try:
                 os.mkdir(directory)
             except OSError as e: # bad directory, or no permissions
-                logger.error("Encountered OSError while trying to create "+directory+". "+str(e))
+                logger.error("Encountered OSError while trying to create " + directory + ". "
+                             + e.args[1].capitalize() + ".")
                 exit(1)
         daemon = subscriberDaemon(directory+'subscriber.pid')
         daemon.start()
