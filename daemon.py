@@ -3,6 +3,7 @@
 # From http://www.jejik.com/articles/2007/02/a_simple_unix_linux_daemon_in_python/
 
 import sys, os, time, atexit
+sys.dont_write_bytecode = True
 from signal import SIGTERM 
 import labstatslogger, logging
 
@@ -13,7 +14,7 @@ logger = labstatslogger.logger
 class Daemon:
 	def __init__(self, pidfile, stdin='/dev/null', stdout='/dev/null', stderr='/dev/null'):
 		self.stdin = stdin
-		self.stdout = stdout # must pipe to /dev/null, possible log output however?
+		self.stdout = stdout
 		self.stderr = stderr
 		self.pidfile = pidfile
 	
@@ -58,7 +59,6 @@ class Daemon:
 			file(self.pidfile,'w+').write("%s\n" % pid)
 		except Exception as e:
 			logger.warning("Pidfile write failed. No permissions?")
-			logger.debug("Repr: "+repr(e))
 			sys.exit(1)
 	
 	def delpid(self):
@@ -116,12 +116,12 @@ class Daemon:
 				logger.error(str(err))
 				sys.exit(1)
 
-	def restart(self):
+	def restart(self, sec):
 		"""
 		Restart the daemon
 		"""
 		self.stop()
-		time.sleep(5)
+		time.sleep(sec)
 		self.start()
 
 	def run(self):
