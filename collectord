@@ -20,20 +20,11 @@
 #              model etc.) to port 5556.
 ### END INIT INFO
 
-# TODO: check status (and if it's actually python) of collector correctly using
-#       stored pid/ reading the pid file
-# Does not need to take in other args for eg. moving pidfile directory
-# Something about sys config file and reading from it to detect running? or
-# settings?
-
-# Goes in /etc/rc.d/init.d
-# TODO: clean up
-
 # Source function library.
 . /etc/rc.d/init.d/functions
 
 # Storage of python script and its directory.
-dir=/afs/umich.edu/user/a/d/adrikim/labstatsMQ # directory for now, keep it here
+dir=/afs/umich.edu/user/a/d/adrikim/newLabStats # directory for now, keep it here
 prog="collector"
 progdir=$dir$prog.py
 
@@ -47,7 +38,7 @@ PID=""
 
 start() {
     update_pid
-    # Checks your privilege. 
+    # Checks your privilege. :^)
     if [ $UID -ne 0 ] ; then
 	failure
 	echo "User has insufficient privilege."
@@ -114,18 +105,15 @@ rh_status() {
 	echo "collector is running with pid" $PID
     fi
 
-    #status $prog 
-    # Take a look at other init scripts on how they use sysconfig 
-    # to check status, eg. afstweaks
+    # status $prog 
 }
 
 update_pid() {
     if [ -f "$pidfile" ] ; then
         PID=$(head -n 1 $pidfile)
-    else # Should we bother checking if the PID isn't there?                                  
+    else       
         PID=`ps -ef | grep collector | grep python | awk '{print $2}'`
     fi
-    # can't return PID directly, will %256 on all output
 }
 
 rh_status_q() {
