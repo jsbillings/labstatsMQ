@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os, sys, time
+sys.dont_write_bytecode = True
 import argparse
 import zmq, socket 
 from subprocess import Popen, PIPE
@@ -264,26 +265,17 @@ if __name__ == "__main__":
 	# Push data_dict to socket
 	context = zmq.Context()
 	push_socket = context.socket(zmq.PUSH)
-	#TODO: this should probably use the host and port from above.
-	#push_socket.connect('tcp://localhost:5555')
 	push_socket.connect('tcp://'+options.remotehost+':'+str(options.remoteport))
 	try:
 		push_socket.send_json(data_dict)
-		verbose_print("Dictionary sent to socket ") # enqueued by socket
-		#print 'tcp://'+options.remotehost+':'+str(options.remoteport)
+		verbose_print("Dictionary sent to socket") 
 	except zmq.ZMQError as e:
-		verbose_print("ZMQ error encountered!")
-		logger.warning("Warning: client was unable to send data")
+		verbose_print("Warning: ZMQ error encountered. "+str(e))
+		logger.warning("Warning: ZMQ error. Client was unable to send data. "+str(e).capitalize())
 		exit(1)
 
-	# Issue: client may hang after pushing info due to PULL socket's infinite
-	# default linger functionality ; happens only if collector isn't running
-	# However, can't manually exit after pushing to socket; will lose data
-	# This will allow push socket to "linger" for the set time
-	# It will then quit manually or auto quit after successful transfer of data
-	push_socket.setsockopt(zmq.LINGER, options.linger) # waits up to 10 seconds by default
+	# Socket waits for 10 seconds (by default) or specified, then quits
+	# regardless of successful data transfer
+	push_socket.setsockopt(zmq.LINGER, options.linger) 
 
-	if (options.debug):
-		# Reset logger to WARNING after client quits
-		logger.setLevel(logging.WARNING)
 	

@@ -27,7 +27,7 @@ def get_hostname():
 
 if __name__ == "__main__": # Should never run
     pass
-else:
+else:    
     host_name = get_hostname()[0]
     warn_msg = get_hostname()[2]
 
