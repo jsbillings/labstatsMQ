@@ -99,12 +99,21 @@ if __name__ == "__main__":
                         dest = "verbose", help = "Turns on verbose output")
     parser.add_argument("--daemon", "-d", action = "store_true", default = False, 
                         dest = "daemon", help = "Turns collector into daemonized process")
-    parser.add_argument("--pidfile", "-p", action="store", default=directory,
-                        dest="directory", help="Sets location of daemon's pidfile")
+    parser.add_argument("--pidfile", "-p", action = "store", default = directory,
+                        dest = "directory", help = "Sets location of daemon's pidfile")
+    parser.add_argument("--tlimit", "-t", action = "store", 
+                        dest = "tlimit", help = "Sets maximum restart sleep time")
+    parser.add_argument("--retries", "-r", action = "store", 
+                        dest = "ntries", help = "Sets maximum number of retries when restarting")
     options = parser.parse_args()
     # TODO: add args for max num seconds to retry
     # TODO: option to reset no. retries
     # (if want to set retries indef. then -1; then it depends on max seconds)
+
+    # for mutually inclusive options ie. providing one means you must provide some other one:
+    # if args.prox is True and args.lport is None and args.rport is None:
+    # parser.error("--prox requires --lport and --rport.")
+
     verbose_print("Verbosity on")
     if options.daemon:
         if not os.path.exists(directory):
