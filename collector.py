@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import sys, os, time
+import sys, os, time, random
 sys.dont_write_bytecode = True
 import zmq
 import labstatslogger, logging, argparse
@@ -55,8 +55,6 @@ def main(ntries, ntime): # ntime is in milliseconds
         logger.warning('Error: could not connect to port 5556. '+str(e).capitalize())
         clean_quit()
     # End init sockets, begin listening for messages    
-    
-    logger.warning("Client has begun listening...")
     while ntries > 0: 
         try:
             # Receive message from lab hosts
@@ -111,7 +109,8 @@ if __name__ == "__main__":
             try:
                 os.mkdir(directory)
             except OSError as e: 
-                logger.error("Encountered OSError while trying to create "+directory)
+                logger.error("Encountered error while trying to create " + directory + ". "
+                             + e.args[1].capitalize() + ".")
                 exit(1)
         daemon = collectorDaemon(directory+'collector.pid')
         daemon.start()
