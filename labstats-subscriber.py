@@ -120,6 +120,9 @@ if __name__ == '__main__':
     parser.add_argument("--pidfile", "-p", action = "store", default = directory,
                         dest = "directory", help = "Sets location of daemon's pidfile")
     options = parser.parse_args()
+    # TODO: add args for max num seconds to retry
+    # TODO: option to reset no. retries
+    # (if want to set retries indef. then -1; then it depends on max seconds)
 
     verbose_print("Verbosity on")
     if options.daemon:
