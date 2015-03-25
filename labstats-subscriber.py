@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import zmq
-import sys, os, time, random, signal
+import sys, os, time, random, signal, json
 sys.dont_write_bytecode = True
 import logging, labstatslogger, argparse
 from daemon import Daemon
@@ -64,7 +64,7 @@ def main(ntries, ntime):
     subscriber = context.socket(zmq.SUB)
     subscriber.setsockopt(zmq.SUBSCRIBE,'')
     try:
-        subscriber.connect('tcp://localhost:5556')
+        subscriber.connect('tcp://localhost:5556') # Allows multiple connections
     except zmq.ZMQError as e:
         verbose_print('Error: could not connect to port 5556. '+str(e).capitalize())
         logger.warning('Error: could not connect to port 5556. '+str(e).capitalize())
@@ -127,7 +127,7 @@ if __name__ == '__main__':
             try:
                 os.mkdir(directory)
             except OSError as e: # bad directory, or no permissions
-                logger.error("Encountered OSError while trying to create " + directory + ". "
+                logger.error("Encountered error while trying to create " + directory + ". "
                              + e.args[1].capitalize() + ".")
                 exit(1)
         daemon = subscriberDaemon(directory+'subscriber.pid')
