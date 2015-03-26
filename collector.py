@@ -32,12 +32,12 @@ def sighup_handler(signal, frame):
     logger.warning("Collector received a SIGHUP")
     context.destroy()
     time.sleep(5)
-    main(3, 2000)
+    main(options.ntries, 2000, options.tlimit)
 
 signal.signal(signal.SIGTERM, sigterm_handler) 
 signal.signal(signal.SIGHUP, sighup_handler)
 
-def main(ntries, ntime): # ntime is in milliseconds 
+def main(ntries, ntime, tlimit): # ntime is in milliseconds 
     # Initialize PUSH, PUB sockets 
     context = zmq.Context()
     client_collector = context.socket(zmq.PULL)
@@ -55,8 +55,9 @@ def main(ntries, ntime): # ntime is in milliseconds
         logger.warning('Error: could not connect to port 5556. '+str(e).capitalize())
         clean_quit()
     # End init sockets, begin listening for messages    
-    while ntries > 0: 
+    while ntries != 0 and (tlimit < 0 or ntime <= tlimit): 
         try:
+            raise zmq.ZMQError("Testing")
             # Receive message from lab hosts
             verbose_print('Listening...')
             message = client_collector.recv_json()
@@ -72,7 +73,7 @@ def main(ntries, ntime): # ntime is in milliseconds
             context.destroy()
             time.sleep(ntime / 1000)
             ntime = (2 * ntime) + random.randint(0, 1000)
-            main(ntries - 1, ntime) 
+            main(ntries - 1, ntime, tlimit)
         except (KeyboardInterrupt, SystemExit): # catches C^c, only for non-daemon mode
             verbose_print('\nQuitting collector...')
             logger.warning("Quitting subscriber...")
@@ -91,7 +92,7 @@ def main(ntries, ntime): # ntime is in milliseconds
 
 class collectorDaemon(Daemon):
     def run(self):
-        main(3, 2000)
+        main(options.ntries, 2000, options.tlimit)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -101,18 +102,22 @@ if __name__ == "__main__":
                         dest = "daemon", help = "Turns collector into daemonized process")
     parser.add_argument("--pidfile", "-p", action = "store", default = directory,
                         dest = "directory", help = "Sets location of daemon's pidfile")
-    parser.add_argument("--tlimit", "-t", action = "store", 
+    parser.add_argument("--tlimit", "-t", type = int,
                         dest = "tlimit", help = "Sets maximum restart sleep time")
-    parser.add_argument("--retries", "-r", action = "store", 
+    parser.add_argument("--retries", "-r", type = int,
                         dest = "ntries", help = "Sets maximum number of retries when restarting")
     options = parser.parse_args()
     # TODO: add args for max num seconds to retry
     # TODO: option to reset no. retries
     # (if want to set retries indef. then -1; then it depends on max seconds)
-
-    # for mutually inclusive options ie. providing one means you must provide some other one:
-    # if args.prox is True and args.lport is None and args.rport is None:
-    # parser.error("--prox requires --lport and --rport.")
+    if options.tlimit is None:
+        options.tlimit = -1 # indefinite
+    if options.ntries is None:
+        options.ntries = -1 # indefinite- or should it be 3-4 retries by default?
+    
+    # ntries specified and negative, but no tlimit provided
+    elif options.ntries < 0 and options.tlimit is None:
+        parser.error("Error: must specify --tlimit if --ntries is negative")
 
     verbose_print("Verbosity on")
     if options.daemon:
@@ -127,4 +132,4 @@ if __name__ == "__main__":
         daemon.start()
         
     else: # run directly as unindependent Python process, not as daemon
-        main(3, 2000)
+        main(options.ntries, 2000, options.tlimit)
