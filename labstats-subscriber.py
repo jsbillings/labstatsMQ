@@ -5,7 +5,6 @@ sys.dont_write_bytecode = True
 import logging, labstatslogger, argparse
 from daemon import Daemon
 
-# TODO: running as daemon then running as verbose only allows both to run?
 directory = "/var/run/labstats/"
 logger = labstatslogger.logger
 
@@ -53,7 +52,7 @@ def sighup_handler(signal, frame):
     logger.warning("Collector received a SIGHUP")
     context.destroy()
     time.sleep(5)
-    main(3, 2000)
+    main(options.ntries, 2000, options.tlimit)
 
 signal.signal(signal.SIGTERM, sigterm_handler)
 signal.signal(signal.SIGHUP, sighup_handler)
@@ -70,7 +69,7 @@ def main(ntries, ntime):
         logger.warning('Error: could not connect to port 5556. '+str(e).capitalize())
         clean_quit()
     # Done initializing sockets, begin listening for messages
-    while ntries > 0:
+    while ntries != 0 and (tlimit < 0 or ntime <= tlimit):
         try:
             verbose_print("Waiting for message...")
             message = subscriber.recv_json()
@@ -90,7 +89,7 @@ def main(ntries, ntime):
             context.destroy()
             time.sleep(ntime / 1000)
             ntime = (2 * ntime) + random.randint(0, 1000)
-            main(ntries - 1, ntime) 
+            main(ntries - 1, ntime, tlimit) 
         except (KeyboardInterrupt, SystemExit):
             verbose_print('\nQuitting subscriber...')
             logger.warning("Quitting subscriber...")
@@ -109,7 +108,7 @@ def main(ntries, ntime):
 
 class subscriberDaemon(Daemon):
     def run(self):
-        main(3, 2000)
+        main(options.ntries, 2000, options.tlimit)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -119,10 +118,18 @@ if __name__ == '__main__':
                         dest = "daemon", help = "Turns subscriber into daemon")
     parser.add_argument("--pidfile", "-p", action = "store", default = directory,
                         dest = "directory", help = "Sets location of daemon's pidfile")
+    parser.add_argument("--tlimit", "-t", type = int,
+                        dest = "tlimit", help = "Sets maximum restart sleep time")
+    parser.add_argument("--retries", "-r", type = int,
+                        dest = "ntries", help = "Sets maximum number of retries when restarting")
     options = parser.parse_args()
-    # TODO: add args for max num seconds to retry
-    # TODO: option to reset no. retries
+
     # (if want to set retries indef. then -1; then it depends on max seconds)
+    if options.tlimit is None:
+        options.tlimit = -1 # indefinite
+    if options.ntries is None:
+        options.ntries = -1 # indefinite- or should it be 3-4 retries by default?
+    # Any cases eg. ntries specified as -1 but no tlimit specified -> error to consider?
 
     verbose_print("Verbosity on")
     if options.daemon:
@@ -136,4 +143,4 @@ if __name__ == '__main__':
         daemon = subscriberDaemon(directory+'subscriber.pid')
         daemon.start()
     else:
-        main(3, 2000) # Default is 3 tries max, with starting restart time of 2 seconds
+        main(options.ntries, 2000, options.tlimit)
