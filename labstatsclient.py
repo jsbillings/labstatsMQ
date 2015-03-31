@@ -7,6 +7,8 @@ from subprocess import Popen, PIPE
 import labstatslogger, logging
 import json
 
+# TODO: check that all int/string representations are proper
+
 logger = labstatslogger.logger
 
 data_dict = {
@@ -19,7 +21,7 @@ data_dict = {
         'memPhysTotal': -1, # 4
         'memVirtTotal': -1, # 5
         'cpuCoreCount': -1, # 6
-	'product': None, #these three will be set to match logstash data # 7
+	'product': None, # 7
 	'version': None, # 8
 	'edition': None, # 9
 
@@ -29,26 +31,20 @@ data_dict = {
         'memVirtUsed': -1, 
         'pagefaultspersec': -1,
         'cpuPercent': -1,
-        'cpuLoad5': -1, #cpuLoad or cpuLoad5?
+        'cpuLoad5': -1, 
         'userCount': -1, 
         'userAtConsole': False, 
+	'success' : True
 }
 
-def static_data():
+def getmodel():
 	out_dict = dict()
-	# 1. Gets hostname of the current machine
-	out_dict['hostname'] = socket.getfqdn() 
-	
-	# 2. Gets IP address
-	out_dict['ip'] = [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")][0] 
-
-	# 3. Gets manufacturer and product name -> model of machine
 	try: 
 		dmi = open("/var/cache/dmi/dmi.info", 'r')
 	except Exception as e:
 		verbose_print("Exception encountered: could not open /var/cache/dmi/dmi.info")
 		logger.debug("Exception encountered: could not open /var/cache/dmi/dmi.info")
-		return out_dict
+		return {'success' : False}
 	for line in dmi.readlines():
 		sysInfo = line.split("'")
 		if sysInfo[0] == "SYSTEMMANUFACTURER=":
@@ -57,13 +53,16 @@ def static_data():
 			model = sysInfo[1]
 	out_dict['model'] = ' '.join([system,model]) 
 	dmi.close()
-	# 4. 5. Gets total physical, virtual memory
+	return out_dict
+
+def gettotalmem():
+	out_dict = dict()
 	try:
 		meminfo = open('/proc/meminfo', 'r')
 	except Exception as e:
 		verbose_print("Exception encountered: could not open /proc/meminfo")
 		logger.debug("Exception encountered: could not open /proc/meminfo")
-		return out_dict
+		return {'success' : False}
 	for line in meminfo.readlines():
 		memInfo = line.split()
 		if memInfo[0] == "MemTotal:":
@@ -71,25 +70,22 @@ def static_data():
 		elif memInfo[0] == "CommitLimit:":
 			out_dict['memVirtTotal'] = memInfo[1]
 	meminfo.close()
-	# 6. Gets no. of CPU cores
+	return out_dict
+
+def getcores():
+	out_dict = dict()
 	try:
 		cpuinfo = open("/proc/cpuinfo", 'r')
 	except Exception as e:
 		verbose_print("Exception encountered: could not open /proc/cpuinfo")
 		logger.debug("Exception encountered: could not open /proc/cpuinfo")
-		return out_dict
+		return {'success' : False}
 	procs = 0
 	for line in cpuinfo.readlines():
 		if line.find("processor\t") > -1:
 			procs += 1
 	cpuinfo.close()
 	out_dict['cpuCoreCount'] = procs
-	
-	# 7. 8. 9. Gets product, version, edition
-	out_dict.update(getproduct())
-	out_dict.update(getversion())
-	out_dict.update(getedition())
-
 	return out_dict
 
 def getproduct():
@@ -98,8 +94,9 @@ def getproduct():
                   shell = True, stdout = PIPE)
 	product = prod_proc.communicate()[0].strip()
 	if (prod_proc.returncode != 0):
-	    verbose_print("Exception encountered: could not get CAEN product info")
-	    logger.debug("Exception encountered: could not get CAEN product info")
+		verbose_print("Exception encountered: could not get CAEN product info")
+		logger.debug("Exception encountered: could not get CAEN product info")
+		return {'success' : False}
 	out_dict['product'] = product
 	return out_dict
 	
@@ -111,6 +108,7 @@ def getversion():
 	if (ver_proc.returncode != 0):
 		verbose_print("Exception encountered: unable to get CAEN version")
 		logger.debug("Exception encountered: unable to get CAEN version")
+		return {'success' : False}
 	out_dict['version'] = version
 	return out_dict
 
@@ -122,9 +120,16 @@ def getedition():
 	if (ed_proc.returncode != 0):
 		verbose_print("Exception encountered: unable to get CAEN edition")
 		logger.debug("Exception encountered: unable to get CAEN edition")
+		return out_dict
 	out_dict['edition'] = edition
 	return out_dict
-	
+
+# meminfo is assumed to have int fields
+# hugepages are the only fields that have no kb/units marker
+# only fields that may not always be present seem to be hugepages
+
+# TODO: alternate methods that might be more accurate/reliable:
+# top (shows total/used/free mem, swap total/used/free mem, load avg (read from loadavg file))
 def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
 	out_dict = dict()
 	try:
@@ -132,7 +137,7 @@ def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
 	except Exception as e:
 		verbose_print("Exception encountered: could not open /proc/meminfo")
 		logger.debug("Exception encountered: could not open /proc/meminfo")
-		return out_dict
+		return {'success' : False}
 
 	for line in meminfo.readlines():
 		if line.find("Inactive:") > -1:
@@ -143,7 +148,7 @@ def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
 			mfree = int(line.split()[1])
 		elif line.find('Committed_AS:') > -1:
 			committed = int(line.split()[1])
-	out_dict['memPhysUsed'] = total - inactive-mfree
+	out_dict['memPhysUsed'] = total - inactive - mfree
 	out_dict['memVirtUsed'] = committed
 	return out_dict
 
@@ -154,7 +159,7 @@ def getpagefaults():
 	if (sarproc.returncode != 0): 
 		verbose_print("Exception encountered: sar -B failed to communicate properly")
 		logger.debug("Exception encountered: sar -B failed to communicate properly")
-		return out_dict
+		return {'success' : False}
 
 	sarout = sarout_raw.split('\n') 
 	avg_line = ''
@@ -163,11 +168,12 @@ def getpagefaults():
 			avg_line = line
 			break
 	avg_list = avg_line.split()
-	pfps = float(avg_list[3])
+	pfps = float(avg_list[3]) # TODO- check it's converting properly
 	mpfps = float(avg_list[4])
 	out_dict = {'pagefaultspersec': pfps + mpfps}
 	return out_dict
 
+# Note- this function takes the longest to run
 def getcpuload():
 	out_dict = dict()
 	try:
@@ -175,7 +181,7 @@ def getcpuload():
 	except Exception as e:
 		verbose_print("Exception encountered: could not open /proc/loadavg")
 		logger.debug("Exception encountered: could not open /proc/loadavg")
-		return out_dict
+		return {'success' : False}
 
 	load = loadavg.read().split(" ")[1]
 	loadavg.close()
@@ -207,9 +213,24 @@ def getusers():
 		    'userAtConsole' : (usercount > 0)}
 	return out_dict 
 
+def static_data():
+	out_dict = dict()
+	out_dict['hostname'] = socket.getfqdn() 
+	out_dict['ip'] = [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")][0] 
+
+	out_dict.update(getmodel())
+	out_dict.update(gettotalmem())
+	out_dict.update(getcores())
+	
+	out_dict.update(getproduct())
+	out_dict.update(getversion())
+	out_dict.update(getedition())
+
+	return out_dict
+
 def update_data():
 	out_dict = getmeminfo()
-	out_dict.update(getcpuload())
+	out_dict.update(getcpuload()) 
 	out_dict.update(getusers())
 	out_dict.update(getpagefaults())
 	out_dict['clientTimestamp'] = time.strftime('%Y%m%d%H%M%S', time.gmtime())
