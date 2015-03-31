@@ -29,7 +29,7 @@ data_dict = {
         'memVirtUsed': -1, 
         'pagefaultspersec': -1,
         'cpuPercent': -1,
-        'cpuLoad': -1, #cpuLoad or cpuLoad5?
+        'cpuLoad5': -1, #cpuLoad or cpuLoad5?
         'userCount': -1, 
         'userAtConsole': False, 
 }
@@ -40,10 +40,7 @@ def static_data():
 	out_dict['hostname'] = socket.getfqdn() 
 	
 	# 2. Gets IP address
-	addr_proc = Popen('ip addr show eth0', shell = True, stdout = PIPE)
-	ip_info = addr_proc.communicate()[0]
-	addr = ip_info.split('inet')[1].strip().split('/')[0].strip()
-	out_dict['ip'] = addr
+	out_dict['ip'] = [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")][0] 
 
 	# 3. Gets manufacturer and product name -> model of machine
 	try: 
@@ -188,7 +185,7 @@ def getcpuload():
 	cpustats = cpustats.split('\n')[-2].split()[2:]
 	cpupercent = sum([float(x) for x in cpustats[:-1]])
 
-	out_dict = { 'cpuLoad': load,
+	out_dict = { 'cpuLoad5': load,
 		     'cpuPercent': cpupercent }
 	return out_dict
 	

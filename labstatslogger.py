@@ -11,11 +11,7 @@ from subprocess import Popen, PIPE
 # Returns tuple of IP address, then MAC address, then error message (if any)
 def get_hostname():
     # Gets IP address, MAC address for hostname
-    addr_proc = Popen('ip addr show eth0', shell = True, stdout = PIPE)
-    ip_info = addr_proc.communicate()[0]
-    addr = ip_info.split('inet')[1].strip().split('/')[0].strip()
-    mac = ip_info.split('ether')[1].strip().split(' ')[0].strip() 
-
+    addr = [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")][0]
     warn_msg = ''
     # Attempts to get hostname from IP address
     try:
@@ -23,13 +19,13 @@ def get_hostname():
     except socket.herror, h:
         warn_msg = 'Logger set up without successfully looking up hostname. repr: ' + repr(h)
         host_name = 'dnshost'
-    return host_name, mac, warn_msg
+    return host_name, warn_msg
 
 if __name__ == "__main__": # Should never run
     pass
 else:    
     host_name = get_hostname()[0]
-    warn_msg = get_hostname()[2]
+    warn_msg = get_hostname()[1]
 
     logger = logging.getLogger(host_name)
     handler = logging.handlers.SysLogHandler(address = ('linuxlog.engin.umich.edu', 514)) #changed from 515 to 514
