@@ -57,13 +57,13 @@ def sighup_handler(signal, frame):
 signal.signal(signal.SIGTERM, sigterm_handler)
 signal.signal(signal.SIGHUP, sighup_handler)
 
-def main(ntries, ntime):   
+def main(ntries, ntime, tlimit):   
     # Set up ZMQ sockets and connections
     context = zmq.Context()
     subscriber = context.socket(zmq.SUB)
     subscriber.setsockopt(zmq.SUBSCRIBE,'')
     try:
-        subscriber.connect('tcp://localhost:5556') # Allows multiple connections
+        subscriber.connect('tcp://%s:5556' % options.server) # Allows multiple connections
     except zmq.ZMQError as e:
         verbose_print('Error: could not connect to port 5556. '+str(e).capitalize())
         logger.warning('Error: could not connect to port 5556. '+str(e).capitalize())
@@ -112,6 +112,8 @@ class subscriberDaemon(Daemon):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("--server", "-s", action = "store", default = 'localhost',
+                        dest = "server", help = "Set server to connect to")
     parser.add_argument("--verbose", "-v", action = "store_true", default = False, 
                         dest = "verbose", help = "Turns on verbosity flag")
     parser.add_argument("--daemon", "-d", action = "store_true", default = False, 
