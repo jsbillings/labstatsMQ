@@ -83,8 +83,8 @@ def main(ntries, ntime, tlimit):
                 output_log(json.dumps(message))
 
         except zmq.ZMQError as e:
-            verbose_print("Warning: ZMQ error. "+str(e).capitalize()+". Restarting...")
-            logger.warning("Warning: ZMQ error. "+str(e).capitalize()+". Restarting...")
+            verbose_print("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+ntries+" left...")
+            logger.warning("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+ntries+" left...")
             # Exponential backoff runs here
             context.destroy()
             time.sleep(ntime / 1000)
@@ -120,18 +120,15 @@ if __name__ == '__main__':
                         dest = "daemon", help = "Turns subscriber into daemon")
     parser.add_argument("--pidfile", "-p", action = "store", default = directory,
                         dest = "directory", help = "Sets location of daemon's pidfile")
-    parser.add_argument("--tlimit", "-t", type = int,
-                        dest = "tlimit", help = "Sets maximum restart sleep time")
-    parser.add_argument("--retries", "-r", type = int,
-                        dest = "ntries", help = "Sets maximum number of retries when restarting")
+    parser.add_argument("--tlimit", "-t", type = int, default = -1,
+                        dest = "tlimit", help = "Sets maximum restart sleep time (-1 or infinite by default)")
+    parser.add_argument("--retries", "-r", type = int, default = 3,
+                        dest = "ntries", help = "Sets maximum number of retries when restarting (3 by default)")
     options = parser.parse_args()
-
-    # (if want to set retries indef. then -1; then it depends on max seconds)
-    if options.tlimit is None:
-        options.tlimit = -1 # indefinite
-    if options.ntries is None:
-        options.ntries = -1 # indefinite- or should it be 3-4 retries by default?
-    # Any cases eg. ntries specified as -1 but no tlimit specified -> error to consider?
+    
+    # ntries specified and negative, but no tlimit provided
+    if options.ntries < 0 and options.tlimit < 0: 
+        parser.error("must specify --tlimit if --ntries is negative")
 
     verbose_print("Verbosity on")
     if options.daemon:
