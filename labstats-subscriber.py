@@ -83,8 +83,8 @@ def main(ntries, ntime, tlimit):
                 output_log(json.dumps(message))
 
         except zmq.ZMQError as e:
-            verbose_print("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+ntries+" left...")
-            logger.warning("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+ntries+" left...")
+            verbose_print("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+str(ntries)+" tries left...")
+            logger.warning("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+str(ntries)+" tries left...")
             # Exponential backoff runs here
             context.destroy()
             time.sleep(ntime / 1000)
