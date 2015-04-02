@@ -7,8 +7,6 @@ from subprocess import Popen, PIPE
 import labstatslogger, logging
 import json
 
-# TODO: check that all int/string representations are proper
-
 logger = labstatslogger.logger
 
 data_dict = {
@@ -99,7 +97,8 @@ def getproduct():
 		return {'success' : False}
 	out_dict['product'] = product
 	return out_dict
-	
+
+# Currently a year #, but keep as a string
 def getversion():
 	out_dict = dict()
 	ver_proc = Popen("grep CLSE /etc/caen-release | sed -e 's/.*-//'", 
@@ -124,13 +123,7 @@ def getedition():
 	out_dict['edition'] = edition
 	return out_dict
 
-# meminfo is assumed to have int fields
-# hugepages are the only fields that have no kb/units marker
-# only fields that may not always be present seem to be hugepages
-
-# TODO: alternate methods that might be more accurate/reliable:
-# top (shows total/used/free mem, swap total/used/free mem, load avg (read from loadavg file))
-def getmeminfo(): #TODO: make sure this gives the numbers we're expecting
+def getmeminfo(): 
 	out_dict = dict()
 	try:
 		meminfo = open("/proc/meminfo", "r")
@@ -168,12 +161,11 @@ def getpagefaults():
 			avg_line = line
 			break
 	avg_list = avg_line.split()
-	pfps = float(avg_list[3]) # TODO- check it's converting properly
+	pfps = float(avg_list[3]) 
 	mpfps = float(avg_list[4])
 	out_dict = {'pagefaultspersec': pfps + mpfps}
 	return out_dict
 
-# Note- this function takes the longest to run
 def getcpuload():
 	out_dict = dict()
 	try:
@@ -194,7 +186,7 @@ def getcpuload():
 	out_dict = { 'cpuLoad5': load,
 		     'cpuPercent': cpupercent }
 	return out_dict
-	
+
 def getusers():
 	out_dict = dict()
 	whoproc = Popen(['who', '-us'], stdout=PIPE) 
