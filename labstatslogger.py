@@ -8,7 +8,7 @@ from logging import handlers
 from subprocess import Popen, PIPE
 
 # Get hostname function in order to hook logger successfully across modules
-# Returns tuple of IP address, then MAC address, then error message (if any)
+# Returns tuple of IP address and error message (if any)
 def get_hostname():
     # Gets IP address, MAC address for hostname
     addr = [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")][0]
