@@ -115,12 +115,12 @@ class Daemon:
 				logger.error(str(err))
 				sys.exit(1)
 
-	def restart(self, sec):
+	def restart(self):
 		"""
 		Restart the daemon
 		"""
 		self.stop()
-		time.sleep(sec)
+		time.sleep(5)
 		self.start()
 
 	def run(self):
