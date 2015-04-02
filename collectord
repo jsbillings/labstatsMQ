@@ -24,7 +24,7 @@
 . /etc/rc.d/init.d/functions
 
 # Storage of python script and its directory.
-dir=/afs/umich.edu/user/a/d/adrikim/newLabStats # directory for now, keep it here
+dir=/afs/umich.edu/user/a/d/adrikim/newLabStats # directory for now
 prog="collector"
 progdir=$dir$prog.py
 
@@ -33,12 +33,9 @@ pidfile=/var/run/labstats/$prog.pid
 pidname="$prog.pid"
 PID=""
 
-#config=/etc/sysconfig/$prog # only if we need one later
-#[ -e /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
-
 start() {
     update_pid
-    # Checks your privilege. :^)
+    # Checks your privilege.
     if [ $UID -ne 0 ] ; then
 	failure
 	echo "User has insufficient privilege."
@@ -49,13 +46,17 @@ start() {
 	exit 4
     fi
     
-    # No need to try and process other flags.
+    # Note: no need to try and process other flags
     python $dir/collector.py -d
-    success
-    echo $"Started $prog"
-    #retval=$?
-    #[ $retval -eq 0 ]
-    #return $retval
+
+    # check that it's running by check pid was created
+    if [ -e "$pidfile" ] ; then
+	success
+	echo "Started $prog"
+    else
+        failure
+	echo "$prog failed to start"
+    fi
 }
 
 stop() {
@@ -78,10 +79,7 @@ stop() {
     kill "$PID"
     success 
     echo "Stopped $prog"
-    #RETVAL=3
-    #retval=$?
     # Script handles erasure of the pidfile
-    #return $retval
 }
 
 restart() {
@@ -98,18 +96,16 @@ force_reload() {
 }
 
 rh_status() {
-    update_pid # return val of get_pid
+    update_pid 
     if [ -z "$PID" ] ; then # PID is null; collector not running
             echo "collector is not running"
     else
 	echo "collector is running with pid" $PID
     fi
-
-    # status $prog 
 }
 
 update_pid() {
-    if [ -f "$pidfile" ] ; then
+    if [ -e "$pidfile" ] ; then
         PID=$(head -n 1 $pidfile)
     else       
         PID=`ps -ef | grep collector | grep python | awk '{print $2}'`
@@ -117,24 +113,20 @@ update_pid() {
 }
 
 rh_status_q() {
-    # 2>&1 means redirect stderr to stdout
     rh_status >/dev/null 2>&1
 }
 
 case "$1" in
     start)
 	start
-        #rh_status_q && exit 0
         ;;
     stop)
         stop
-        #rh_status_q || exit 0
         ;;
     restart)
         restart
         ;;
     reload)
-        #rh_status_q || exit 7
         reload
         ;;
     force-reload)
