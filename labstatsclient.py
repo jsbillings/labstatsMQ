@@ -161,7 +161,6 @@ def getpagefaults():
 			continue
 		sum += float(line.split()[4]) + float(line.split()[5])
 		lines_processed += 1
-	print sum
 	out_dict['pagefaultspersec'] = sum / 5
 	return out_dict
 
