@@ -112,6 +112,11 @@ def getedition():
         out_dict['edition'] = edition
         return out_dict
 
+###############################################################################################
+# Dynamic dict entry functions, used by update_data()
+'''
+
+'''
 def getmeminfo(): 
         out_dict = dict()
         try:
@@ -133,8 +138,9 @@ def getmeminfo():
         return out_dict
 
 '''
-Get 5 pagefault data lines, push into an array of lines. 
+Get several lines of pagefault data from sar -B, use 5 latest lines to get average pagefaults/s. 
 If today's sar file doesn't have that many data lines, look in previous day's log to fill in the rest.
+(Especially between 12AM and 12:10AM)
 '''
 def getpagefaults(): 
         out_dict = dict()
@@ -164,6 +170,9 @@ def getpagefaults():
 	out_dict['pagefaultspersec'] = sum / 5
 	return out_dict
 
+'''
+Get CPU load and use percentage
+'''
 def getcpuload():
         out_dict = dict()
         try:
@@ -183,6 +192,10 @@ def getcpuload():
                      'cpuPercent': cpupercent }
         return out_dict
 
+'''
+Get # of users logged in.
+
+'''
 def getusers():
         out_dict = dict()
         whoproc = Popen(['who', '-us'], stdout=PIPE) 
@@ -245,6 +258,8 @@ def failure_output(message):
 	logger.debug(message)
 	return { 'success' : False }
 
+###############################################################################################
+
 if __name__ == "__main__":
 	# Get client static settings
 	remotehost = 'hwstats.engin.umich.edu'
@@ -294,10 +309,11 @@ if __name__ == "__main__":
 		verbose_print("Dictionary sent to socket") 
 	except zmq.ZMQError as e:
 		verbose_print("Warning: ZMQ error encountered. "+str(e).capitalize())
-		logger.warning("Warning: ZMQ error. Client was unable to send data. "+str(e).capitalize())
+		logger.warning("Warning: ZMQ error encountered. Client was unable to send data. "
+			       +str(e).capitalize())
 		exit(1)
 
-	# Socket waits for 10 seconds (by default) or specified, then quits
+	# Socket waits for 10 seconds (by default) or specified --linger time, then quits
 	# regardless of successful data transfer
 	push_socket.setsockopt(zmq.LINGER, options.linger) 
 
