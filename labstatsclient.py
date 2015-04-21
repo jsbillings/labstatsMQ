@@ -254,7 +254,7 @@ def update_data():
 	out_dict.update(getcpuload()) 
 	out_dict.update(getusers())
 	out_dict.update(getpagefaults())
-	out_dict['clientTimestamp'] = time.strftime('%Y%m%d%H%M%S', time.gmtime())
+	out_dict['clientTimestamp'] = time.strftime('%Y-%m-%dT%H:%M:%S%z', time.gmtime())
 	return out_dict
 '''
 Prints given message if --verbose enabled
