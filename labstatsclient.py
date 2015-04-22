@@ -6,6 +6,7 @@ import zmq, socket
 from subprocess import Popen, PIPE
 import labstatslogger, logging
 import json
+import dmidecode
 
 logger = labstatslogger.logger
 
@@ -43,18 +44,17 @@ Gets model of machine
 '''
 def getmodel():
         out_dict = dict()
-        try: 
-                dmi = open("/var/cache/dmi/dmi.info", 'r')
-        except Exception as e:
-                return failure_output("Exception encountered: could not open /var/cache/dmi/dmi.info")
-        for line in dmi.readlines():
-                sysInfo = line.split("'")
-                if sysInfo[0] == "SYSTEMMANUFACTURER=":
-                        system = sysInfo[1]
-                elif sysInfo[0] == "SYSTEMPRODUCTNAME=":
-                        model = sysInfo[1]
-        out_dict['model'] = ' '.join([system,model]) 
-        dmi.close()
+	dmisysdata = dmidecode.system()
+	for key in dmisysdata.keys():
+		try:
+			model = dmisysdata[key]['data']['Product Name']
+		except:
+			continue
+		try:
+			brand = dmisysdata[key]['data']['Manufacturer']
+		except:
+			continue
+        out_dict['model'] = ' '.join([brand,model]) 
         return out_dict
 '''
 Gets total memory: a sum of physical and virtual memory
