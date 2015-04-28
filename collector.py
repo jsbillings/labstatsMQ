@@ -57,7 +57,6 @@ def main(ntries, ntime, tlimit): # ntime is in milliseconds
     # End init sockets, begin listening for messages    
     while ntries != 0 and (tlimit < 0 or ntime <= tlimit): 
         try:
-            raise zmq.ZMQError("Testing")
             # Receive message from lab hosts
             verbose_print('Listening...')
             message = client_collector.recv_json()
