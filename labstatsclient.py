@@ -40,11 +40,13 @@ data_dict = {
 # Static functions used in static_data()
 
 '''
-Gets model of machine
+Gets model of machine. Requires root access to use dmidecode
 '''
 def getmodel():
         out_dict = dict()
 	dmisysdata = dmidecode.system()
+	if not dmisysdata.keys(): # no keys when not sudo
+		return failure_output("Error: cannot get model/brand (not sudo?)")
 	for key in dmisysdata.keys():
 		try:
 			model = dmisysdata[key]['data']['Product Name']
@@ -54,7 +56,7 @@ def getmodel():
 			brand = dmisysdata[key]['data']['Manufacturer']
 		except:
 			continue
-        out_dict['model'] = ' '.join([brand,model]) 
+        out_dict['model'] = ' '.join([brand, model])
         return out_dict
 '''
 Gets total memory: a sum of physical and virtual memory
@@ -179,14 +181,18 @@ def getpagefaults():
 	keywords = [ 'Average', 'Linux', 'RESTART', 'pgpgin/s' ] # removal keywords
 	sum = 0.0
 	lines_processed = 0
-	for line in sarlines:
-		if lines_processed >= 5:
-			break
-		if any(word in line for word in keywords) or line is None:
-			continue
-		sum += float(line.split()[4]) + float(line.split()[5])
-		lines_processed += 1
-	out_dict['pagefaultspersec'] = sum / 5
+	try:
+		for line in sarlines:
+			if lines_processed >= 5:
+				break
+			if any(word in line for word in keywords) or line is None:
+				continue
+			tokens = line.split()
+			sum += float(tokens[4]) + float(tokens[5]) # Changed from multiple line.split()[num] calls
+			lines_processed += 1
+		out_dict['pagefaultspersec'] = sum / 5
+	except Exception as e:
+		return failure_output("Exception encountered: could not process sar -B output")
 	return out_dict
 '''
 Get CPU load and use percentage
@@ -329,5 +335,8 @@ if __name__ == "__main__":
 	# Socket waits for 10 seconds (by default) or specified --linger time, then quits
 	# regardless of successful data transfer
 	push_socket.setsockopt(zmq.LINGER, options.linger) 
+
+	
+
 
 	
