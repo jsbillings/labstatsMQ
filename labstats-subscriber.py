@@ -8,14 +8,9 @@ from datetime import datetime, timedelta, date
 from time import mktime, sleep
 import cPickle
 
-# TODO: implement some of the new argparse options (namely turning off pickling output)
-# remove some unneeded (verbose) outputs
-
 directory = "/var/run/labstats/"
 timeformat = '%Y-%m-%dT%H:%M:%S'
 logger = labstatslogger.logger
-
-check_ins = {} # TODO: move this to within main() only?
 
 # Outputs to stdout if --verbose enabled
 def verbose_print(message):
@@ -53,15 +48,16 @@ signal.signal(signal.SIGHUP, sighup_handler)
 # Reaper functions - check timestamps, read in/out checked-in machines, 
 ##########################################################################################
 # Verbose prints out check_ins: hostname::timestamp format
-def print_checkins(last_check):
+def print_checkins(last_check, check_ins):
     verbose_print("Last check was at "+last_check.strftime(timeformat))
     verbose_print("Checked-in machines: ")
     for hostname, timestamp in check_ins.iteritems():
         verbose_print(hostname+"::"+timestamp.strftime(timeformat))
 
 # Outputs pickled (last_check, check_ins) tuple. Overwrites existing checked_in file
-def output_checkins(last_check):
-    global check_ins
+def output_checkins(last_check, check_ins):
+    if options.output is False:
+        return
     try:
     	checkinfile = open('checked_in', 'w')
     except Exception as e:
@@ -79,22 +75,18 @@ def output_checkins(last_check):
 # Read from outputted checked_in file (esp. when restarted)
 # Read from pickled format, return last_check (and tries cleartext version when pickled input not working)
 def read_checkins():
-    global check_ins
     if not os.path.isfile('checked_in'): # No checkins.log found
         logger.warning("No checked_in found")
-        return None
-    check_ins.clear() 
-    
-    # Pickling version:
+        return (None, {})
     try:
     	infile = open('checked_in', 'r')
     	last_check, check_ins = cPickle.load(infile)
         infile.close()
-        print_checkins(last_check) # verbose prints what was stored
-        return last_check
+        print_checkins(last_check, check_ins) # verbose prints what was stored
+        return last_check, check_ins
     except Exception as e:
     	error_output("Error: could not get last_check and check_ins. "+str(e))
-        return read_cleartext()
+        return (None, {})
 
 # Checks timestamp is within <interval> minutes' time. Returns True if timestamp outdated
 def outdated(curtime, timestamp): # pass in type datetime, datetime
@@ -106,14 +98,14 @@ def outdated(curtime, timestamp): # pass in type datetime, datetime
 # Checks timestamps are all <interval> minutes within current time
 # Removes machines/timestamps that are outdated
 # Set last_check to current GMT (4-5 hour offset)
-def reap(last_recv):
-    global check_ins
-    cur_string = time.strftime(timeformat, time.gmtime()) # converting directly from gmtime to datetime loses DST data
+def reap(last_recv, check_ins):
+    # converting directly from gmtime to datetime loses DST data
+    cur_string = time.strftime(timeformat, time.gmtime()) 
     last_check = datetime.strptime(cur_string, timeformat)
     # if last check and last recv are eg. >90 mins from each other, 
     # stop/skip reaper (because it could be throttling error)
     # Will still update last_check to now though- TODO?
-    if last_check - last_recv > timedelta(minutes = 90):
+    if last_check - last_recv > timedelta(minutes = options.faulttime):
         error_output("Too much time between now and last_recv, skipping reaping")
         return last_check
     new_dict = {}
@@ -125,9 +117,8 @@ def reap(last_recv):
         else: # not outdated; add back to new_dict
             new_dict[hostname] = timestamp
     verbose_print("Reaped "+str(deleted)+" items from check-ins")
-    check_ins = new_dict
-    output_checkins(last_check)
-    return last_check
+    output_checkins(last_check, new_dict)
+    return new_dict 
 
 # Subscriber functions - output datalog, receive data, 
 ##########################################################################################
@@ -146,14 +137,11 @@ def output_log(to_write):
         logout.close()
     except OSError as e:
         error_output("Error: could not write to subscriber.log. No root access.")
-        return
     except Exception as e:
         error_output("Error: could not write to subscriber.log. "+str(e).capitalize())
-        return
 
 def main(ntries, ntime, tlimit):
-    global check_ins
-    last_check = read_checkins()
+    last_check, check_ins = read_checkins()
     
     # Set up ZMQ sockets and connections
     context = zmq.Context()
@@ -170,7 +158,8 @@ def main(ntries, ntime, tlimit):
             # Wait for and receive JSON file
             verbose_print("Waiting for message...")
             message = subscriber.recv_json() # can cause delay if many requests
-            last_recv = datetime.fromtimestamp(mktime(time.gmtime()))
+            recv_str = time.strftime(timeformat, time.gmtime()) 
+            last_recv = datetime.strptime(recv_str, timeformat)
             verbose_print("Received: ")
             verbose_print(message)
             logger.warning("Subscriber received JSON")
@@ -183,8 +172,8 @@ def main(ntries, ntime, tlimit):
             # fault protection if socket/subscriber stalls, don't check and delete all checkins 
             # Takes timestamp, splits it at '+' (UTC offset unable to convert), converts to datetime
             check_ins[message['hostname']] = datetime.strptime(message['clientTimestamp'].split('+')[0], timeformat)
-            print_checkins(last_check) # verbose prints only
-            last_check = reap(last_recv) # will not reap if too far apart, BUT will update last_check
+            print_checkins(last_check, check_ins) # verbose prints only
+            check_ins = reap(last_recv, check_ins) # will not reap if too far apart, BUT will update last_check
 
         except zmq.ZMQError as e:
             error_output("Warning: ZMQ error. "+str(e).capitalize()+
