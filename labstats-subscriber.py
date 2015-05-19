@@ -99,15 +99,14 @@ def outdated(curtime, timestamp): # pass in type datetime, datetime
 # Removes machines/timestamps that are outdated
 # Set last_check to current GMT (4-5 hour offset)
 def reap(last_recv, check_ins):
+    # if last check and last recv are eg. >90 mins from each other, 
+    # stop/skip reaper (because it could be throttling error)
+    if last_check - last_recv > timedelta(minutes = options.faulttime):
+        error_output("Too much time between now and last_recv, skipping reaping")
+        return check_ins
     # converting directly from gmtime to datetime loses DST data
     cur_string = time.strftime(timeformat, time.gmtime()) 
     last_check = datetime.strptime(cur_string, timeformat)
-    # if last check and last recv are eg. >90 mins from each other, 
-    # stop/skip reaper (because it could be throttling error)
-    # Will still update last_check to now though- TODO?
-    if last_check - last_recv > timedelta(minutes = options.faulttime):
-        error_output("Too much time between now and last_recv, skipping reaping")
-        return last_check
     new_dict = {}
     deleted = 0
     for hostname, timestamp in check_ins.iteritems():
@@ -173,7 +172,7 @@ def main(ntries, ntime, tlimit):
             # Takes timestamp, splits it at '+' (UTC offset unable to convert), converts to datetime
             check_ins[message['hostname']] = datetime.strptime(message['clientTimestamp'].split('+')[0], timeformat)
             print_checkins(last_check, check_ins) # verbose prints only
-            check_ins = reap(last_recv, check_ins) # will not reap if too far apart, BUT will update last_check
+            check_ins = reap(last_recv, check_ins) # will not reap if too far apart
 
         except zmq.ZMQError as e:
             error_output("Warning: ZMQ error. "+str(e).capitalize()+
