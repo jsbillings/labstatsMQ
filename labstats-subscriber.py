@@ -63,8 +63,6 @@ def output_checkins(last_check, check_ins):
     except Exception as e:
     	error_output("Warning: unable to open checked_in logfile. "+str(e))
         return
-        # Don't bother trying to output in cleartext format if checked_in
-        # Then it can't be opened anyways
     try:
     	tup = (last_check, check_ins)
     	cPickle.dump(tup, checkinfile)
@@ -73,7 +71,7 @@ def output_checkins(last_check, check_ins):
     	error_output("Error: could not dump pickled check_in data. "+str(e))
 
 # Read from outputted checked_in file (esp. when restarted)
-# Read from pickled format, return last_check (and tries cleartext version when pickled input not working)
+# Read from pickled format, return last_check
 def read_checkins():
     if not os.path.isfile('checked_in'): # No checkins.log found
         logger.warning("No checked_in found")
@@ -98,12 +96,12 @@ def outdated(curtime, timestamp): # pass in type datetime, datetime
 # Checks timestamps are all <interval> minutes within current time
 # Removes machines/timestamps that are outdated
 # Set last_check to current GMT (4-5 hour offset)
-def reap(last_recv, check_ins):
+def reap(last_check, last_recv, check_ins):
     # if last check and last recv are eg. >90 mins from each other, 
     # stop/skip reaper (because it could be throttling error)
     if last_check - last_recv > timedelta(minutes = options.faulttime):
         error_output("Too much time between now and last_recv, skipping reaping")
-        return check_ins
+        return (last_check, check_ins)
     # converting directly from gmtime to datetime loses DST data
     cur_string = time.strftime(timeformat, time.gmtime()) 
     last_check = datetime.strptime(cur_string, timeformat)
@@ -117,7 +115,7 @@ def reap(last_recv, check_ins):
             new_dict[hostname] = timestamp
     verbose_print("Reaped "+str(deleted)+" items from check-ins")
     output_checkins(last_check, new_dict)
-    return new_dict 
+    return (last_check, new_dict)
 
 # Subscriber functions - output datalog, receive data, 
 ##########################################################################################
@@ -146,23 +144,37 @@ def main(ntries, ntime, tlimit):
     context = zmq.Context()
     subscriber = context.socket(zmq.SUB)
     subscriber.setsockopt(zmq.SUBSCRIBE,'')
+    pushsocket = context.socket(zmq.PUSH)
     try:
         subscriber.connect('tcp://%s:5556' % options.server) # Allows multiple connections
     except zmq.ZMQError as e:
         error_output('Error: could not connect to port 5556. '+str(e).capitalize())
         clean_quit()
+    try:
+        pushsocket.connect('tcp://%s:5557' % options.server)
+    except zmq.ZMQError as e:
+        error_output('Error: could not connect to port 5557. '+str(e).capitalize())
+        # Don't think it would warrant quitting, though- TODO?
     # Done initializing sockets, begin listening for messages
     while ntries != 0 and (tlimit < 0 or ntime <= tlimit):
         try:
             # Wait for and receive JSON file
             verbose_print("Waiting for message...")
-            message = subscriber.recv_json() # can cause delay if many requests
+            message = subscriber.recv_json() # possible source of delay
             recv_str = time.strftime(timeformat, time.gmtime()) 
             last_recv = datetime.strptime(recv_str, timeformat)
             verbose_print("Received: ")
             verbose_print(message)
             logger.warning("Subscriber received JSON")
-
+            
+            # Send it over to port 5557 to hostinfo-client
+            try:
+                pushsocket.send_json(message)
+                print 'Sent message'
+            except zmq.ZMQError as e:
+                error_output("Warning: could not send data to hostinfo-client at port 5557")
+                # skips over without quitting/backoff here
+            
             # Output log if daemonized. Will overwrite
             if options.daemon and message['success'] is True:
                 logger.warning("Dumping JSON into logfile")
@@ -172,7 +184,7 @@ def main(ntries, ntime, tlimit):
             # Takes timestamp, splits it at '+' (UTC offset unable to convert), converts to datetime
             check_ins[message['hostname']] = datetime.strptime(message['clientTimestamp'].split('+')[0], timeformat)
             print_checkins(last_check, check_ins) # verbose prints only
-            check_ins = reap(last_recv, check_ins) # will not reap if too far apart
+            last_check, check_ins = reap(last_check, last_recv, check_ins) # will not reap if too far apart
 
         except zmq.ZMQError as e:
             error_output("Warning: ZMQ error. "+str(e).capitalize()+
