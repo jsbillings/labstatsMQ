@@ -280,23 +280,11 @@ def failure_output(message):
 ###############################################################################################
 
 if __name__ == "__main__":
-	# Get client static settings
-	remotehost = 'hwstats.engin.umich.edu'
-	try:
-		remotehost = os.environ["LABSTATSSERVER"]
-	except:
-		logger.warning("Could not find remotehost")
-	remoteport = 5555
-	try:
-		remoteport = int(os.environ["LABSTATSPORT"])
-	except:
-		logger.warning("Could not find remoteport")
-
 	# Process all flags
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--server", "-s", action="store", default=remotehost, dest="remotehost", 
+	parser.add_argument("--server", "-s", action="store", default='hwstats.engin.umich.edu', dest="remotehost", 
 				help="Sets the remote server that accepts labstats data")
-	parser.add_argument("--port", "-p", action="store", type=int, default=remoteport, dest="remoteport",
+	parser.add_argument("--port", "-p", action="store", type=int, default=5555, dest="remoteport",
 				help="Sets the remote port to be used")
 	parser.add_argument("--linger", "-l", action="store", type=int, default=10000, dest="linger",
 			        help="Sets the LINGER time (in ms) of the push socket")
