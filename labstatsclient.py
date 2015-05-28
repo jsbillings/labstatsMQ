@@ -299,8 +299,6 @@ if __name__ == "__main__":
 		verbose_print("Set logger level to debug")
 		logger.setLevel(logging.DEBUG)
 
-	del remotehost, remoteport # Delete these after parsing args
-
 	# Gather data into data_dict
 	data_dict.update(static_data())
 	data_dict.update(update_data())
