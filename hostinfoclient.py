@@ -4,15 +4,14 @@ import time, os, sys
 sys.dont_write_bytecode = True
 from multiprocessing import Process, Manager
 
-# send data to hostinfo when asked- TODO
-
-# Q: add a poller to monitor different sockets in same thread?
-# or make use of multiprocessing- seems to work
 # can use queue to keep track of order of operations
 
-# TODO: make it request-reply instead, make sure it works
-# also make sure it sends the latest check_ins data
-def send_data(check_ins):
+# TODO: make sure it sends the latest check_ins data
+
+check_ins = {}
+
+def send_data():
+    global check_ins
     sender = context.socket(zmq.REP)
     try:
         sender.bind('tcp://*:5558')
@@ -20,11 +19,14 @@ def send_data(check_ins):
         print "Error: unable to bind to port 5558."
         exit(1)
     while True:
-        print "Waiting to send data..."
-        sender.send_json(check_ins)
+        print "Waiting for request..."
+        sender.recv()
+        print "Received request for data"
+        sender.send(check_ins)
         print "Sent data"
 
-def pull_data(check_ins):
+def pull_data():
+    global check_ins
     client = context.socket(zmq.PULL)
     try:
         client.bind('tcp://*:5557')
@@ -38,19 +40,18 @@ def pull_data(check_ins):
             print 'Received message'
             # Q: store only successful reads?
             if data['success'] is True:
-                check_ins[data["hostname"]] = data # hostname-checkin data pair
+                check_ins[data["hostname"]] = data # hostname-json pair
         except Exception as e:
             print "Error: ", str(e)
     
 if __name__ == "__main__": 
     context = zmq.Context()
     manager = Manager()
-    check_ins = manager.dict() # Makes it shareable between processes
-    puller = Process(target = pull_data, args=(check_ins))
+    check_ins = manager.dict() # Makes it shareable between processes- TODO
+    
+    puller = Process(target = pull_data, args=())
     puller.start()
-    puller.join()
-    sender = Process(target = send_data, args=(check_ins))
-    sender.start() # TODO: start only once at most possible
-    sender.join()
-    main()
+    
+    sender = Process(target = send_data, args=())
+    sender.start() 
     

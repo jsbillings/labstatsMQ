@@ -65,13 +65,13 @@ if __name__ == "__main__":
     # TODO- Get check_ins, request it from hostinfoclient
     context = zmq.Context()
     requester = context.socket(zmq.REQ)
-    requester.bind('tcp://*:5558')
+    requester.connect('tcp://localhost:5558')
     try:
-        check_ins = requester.recv_json()
+        requester.send("requesting hostinfo data")
+        check_ins = requester.recv()
     except zmq.ZMQError as e:
         print "Error: hostinfo-client not connected, unable to get labstats data"
         exit(1)
-    # Alternative: import a list of jsons instead to test out for now?
     
     # Begin sifting and printout of data
     main(check_ins)
