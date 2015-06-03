@@ -3,6 +3,7 @@ import zmq, json
 import time, os, sys
 sys.dont_write_bytecode = True
 from multiprocessing import Process, Manager
+import cPickle, zlib
 
 # TODO: needs clean quit
 # TODO: make sure manager shares check_ins properly
@@ -22,10 +23,11 @@ def send_data(check_ins):
         except Exception as e:
             print "Error1 in sender: ", str(e) # operation cannot be accomplished in current state
         try:
-            tosend = json.dumps(check_ins.copy())
-            sender.send_json(tosend)
-            print tosend # blank
-            print "Sent data"
+            # Pickles and compresses data to send to hostinfo
+            pickled = cPickle.dumps(check_ins.copy()) # pickles type dict
+            zipped = zlib.compress(pickled)
+            sender.send(zipped)
+            print "Sent zipped pickled data"
         except (KeyboardInterrupt, SystemExit): # catches C^c
             print 'Quitting sender process...'
             sys.exit()
@@ -61,11 +63,8 @@ if __name__ == "__main__":
     manager = Manager()
     check_ins = manager.dict()
     
-    #puller = Process(target = pull_data, args=(check_ins,))
-    #puller.start()
-    
     sender = Process(target = send_data, args=(check_ins,))
     sender.start() 
-
+    # TODO: make sure sender gets full/latest check_in data
     pull_data(check_ins)
     
