@@ -3,48 +3,72 @@ import zmq, json
 import time, os, sys
 sys.dont_write_bytecode = True
 import argparse
+from datetime import datetime, date, timedelta
 import cPickle as pickle
 import zlib
-######################
+
 # Pair header item with length of the "lines" under it as ints
 # Then choose which header items you need
-headeritems = { "Host name" : 19, 
-                "Type" : 5, 
+headerlines = { "Host name" : 19, 
+                "Type" : 7, 
                 "Edition" : 11, 
                 "Load" : 5, 
-                "Ses" : 3, 
                 "Disp" : 4, 
-                "Last Report" : 13,  
-                "/tmp" : 10 } # Note: /tmp is unlimited length. Most are 9 or less, but no longer than 10
+                "Last Report" : 13 } 
 
 # Pair header item with json key
 headernames = { "Host name" : "hostname", 
                 "Type" : "os", 
                 "Edition" : "edition", 
                 "Load" : "cpuLoad5", 
-                "Ses" : "userCount", 
                 "Disp" : "userAtConsole", 
-                "Last Report" : "clientTimestamp",  
-                "/tmp" : "memPhysUsed" }
+                "Last Report" : "clientTimestamp" }
+
+# Pair header item with format flag/specifiers
+headerfmt = { "Host name" : '%-19.19s', 
+              "Type" : '%-7s', 
+              "Edition" : '%-11s', 
+              "Load" : '%-5s', 
+              "Disp" : '%-4s', 
+              "Last Report" : '%s' } 
+
+sformat = "%m/%d %I:%M%p"
+tformat = "%Y-%m-%dT%H:%M:%S" # 2015-06-04T19:39:43+0000
 
 # Note: may be omitted or changed based on other options later
-def printheader():
+def printheader(headeritems):
     print "The current time is:", time.asctime(time.localtime()) # eg. Thu May 21 13:25:25 2015
-    print "Host name           Type  Edition      Load Ses Disp Last Report   /tmp"
-    print "------------------- ----- ----------- ----- --- ---- ------------- --------"
+    # Print header titles
+    for item in headeritems:
+        print "%-*s" % (headerlines[item], item),
+    print
+    # Print header lines
+    for item in headeritems:
+        print '-' * headerlines[item],
 
 # TODO: redo formatted string; eg timestamp is a string and not float anymore
-# TODO: what is Display? /tmp is free space in the dir- what's its equivalent? need to convert time to localtime
-def printitem(json):
-    # hostname, type, edition, cpu load, sessioncount( number signed in ), (disp?), time checked in, /tmp space
-    print json["hostname"], json["os"], json["edition"], json["cpuLoad5"], json["userCount"], json["userAtConsole"], json["clientTimestamp"], json["memPhysUsed"]
-    print '%-19.19s %-5s %-11s%6.2f %3s %-4s %13s %d' % (json["hostname"], json["os"], json["edition"], 
-                                                         json["cpuLoad5"], json["userCount"], json["userAtConsole"], 
-                                                         json["clientTimestamp"], json["memPhysUsed"])
-    
+def printitem(headeritems, printlist):
+    print
+    for json in printlist:
+        for item in headeritems:
+            print headerfmt[item] % json[headernames[item]],
+        
+    # hostname, type, edition, cpu load, userLoggedIn (physically at computer), time checked in
+    #print json["hostname"], json["os"], json["edition"], json["cpuLoad5"], json["userAtConsole"], json["clientTimestamp"]
+    #print '%-19.19s %-5s %-11s%6.2f %3s %-4s %13s %s' % (json["hostname"], json["os"], json["edition"], json["cpuLoad5"], json["userAtConsole"], json["clientTimestamp"])
 
-# return datetime or a string? Format: 06/03 04:29PM
-#def getlocaltime():
+# Returns time string of format: 06/03 04:29PM
+def tolocaltime(timestr): # Receive the string, turn into datetime using strptime, turn into local time string with strftime
+    date = timestr.split('+')[0]
+    date_dt = datetime.strptime(date, tformat)
+    # Check for DST here
+    if time.localtime().tm_isdst:
+        offset = timedelta(seconds = -time.timezone + 3600)
+    else:
+        offset = timedelta(seconds = -time.timezone)
+    # End DST check
+    date_dt = date_dt + offset
+    return datetime.strftime(date_dt, sformat)
 
 def sift(check_ins):
     machinelist = check_ins.values() # convert dict to list of jsons
@@ -56,18 +80,29 @@ def sift(check_ins):
     if options.all:
         return machinelist # return all
     return machinelist[:10] # return first 10 items
-    
-def main(check_ins):
-    printheader()
-    toprint = sift(check_ins)
-    for d in toprint:
-        printitem(d)
 
-# TODO: make sure Poller works correctly
+# Look at other options here to change header items
+def getheader():
+    return [ "Host name", "Type", "Edition", "Load", "Disp", "Last Report" ]
+
+# Print header, sift items, print items    
+def main(check_ins):
+    headeritems = getheader()
+    printheader(headeritems)
+    toprint = sift(check_ins)
+    # Change all times to local time, editions to uppercase, logged in bool to YES/NO
+    for json in toprint:
+        json['clientTimestamp'] = tolocaltime(json['clientTimestamp'])
+        json['edition'] = json['edition'].upper()
+        json['userAtConsole'] = "YES" if json['userAtConsole'] is True else "NO"
+        json['os'] = "LINUX" if json['os'] == "Linux" else "WINDOWS"
+    printitem(headeritems, toprint)
+
+# Receive check-in data; waits up to 5 seconds for it (quits otherwise)
 def recv_data():
     context = zmq.Context()
     requester = context.socket(zmq.REQ)
-    requester.setsockopt(zmq.LINGER, 5000) 
+    requester.setsockopt(zmq.LINGER, 0) 
     requester.connect('tcp://localhost:5558')
     poller = zmq.Poller()
     poller.register(requester, zmq.POLLIN)
@@ -78,7 +113,7 @@ def recv_data():
             pickled = zlib.decompress(zipped)
             return pickle.loads(pickled) # return type dict
         else:
-            raise IOError("Timeout occurred while processing hostinfo request")
+            raise Exception("Timeout occurred while processing hostinfo request")
     except zmq.ZMQError as e:
         print "Error: hostinfo-client not connected, unable to get labstats data. ", str(e)
         exit(1)
@@ -89,7 +124,8 @@ def recv_data():
         print "Error: could not unzip received data. ", str(e)
         exit(1)
     except Exception as e:
-        print "Exception encountered: ", str(e)
+        print str(e)
+        exit(1)
 
 if __name__ == "__main__":
     # All arguments
