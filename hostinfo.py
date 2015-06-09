@@ -7,13 +7,14 @@ from datetime import datetime, date, timedelta
 import cPickle as pickle
 import zlib
 
-# Pair header item with length of the "lines" under it
-headerlines = { "Host name" : 19, 
+# Pair header item with length of the "lines" under it/length limit
+headerlines = { "Host name" : 33,
                 "Type" : 7, 
                 "Edition" : 11, 
                 "Load" : 5, 
                 "Disp" : 4, 
-                "Last Report" : 13 } 
+                "Last Report" : 13,
+                "IP Address" : 15 } 
 
 # Pair header item with json key
 headernames = { "Host name" : "hostname", 
@@ -21,16 +22,22 @@ headernames = { "Host name" : "hostname",
                 "Edition" : "edition", 
                 "Load" : "cpuLoad5", 
                 "Disp" : "userAtConsole", 
-                "Last Report" : "clientTimestamp" }
+                "Last Report" : "clientTimestamp",
+                "IP Address" : "ip" }
 
 # Pair header item with format flag/specifiers
-headerfmt = { "Host name" : '%-19.19s', 
+headerfmt = { "Host name" : '%-33.33s', 
               "Type" : '%-7s', 
               "Edition" : '%-11s', 
               "Load" : '%-5s', 
               "Disp" : '%-4s', 
-              "Last Report" : '%s' } 
+              "Last Report" : '%s',
+              "IP Address" : '%-15.15s' } 
 
+# TODO: List of fields allowed for --field
+validfields = [ "Report", "Load", "IPAddr", "Display", "Location", "Type", "Model" ]
+
+# Time formatters
 sformat = "%m/%d %I:%M%p"
 tformat = "%Y-%m-%dT%H:%M:%S" # 2015-06-04T19:39:43+0000
 
@@ -41,7 +48,7 @@ def verbose_print(message):
 
 # Note: may be omitted or changed based on other options later
 def printheader(headeritems):
-    print "The current time is:", time.asctime(time.localtime()) # eg. Thu May 21 13:25:25 2015
+    print "\nThe current time is:", time.asctime(time.localtime()), '\n' # eg. Thu May 21 13:25:25 2015
     # Print header titles
     for item in headeritems:
         print "%-*s" % (headerlines[item], item),
@@ -59,7 +66,8 @@ def printitem(headeritems, printlist):
         print
         
 # Returns time string of format: 06/03 04:29PM
-def tolocaltime(timestr): # Receive the string, turn into datetime using strptime, turn into local time string with strftime
+# Receive the string, turn into datetime using strptime, turn into local time string with strftime
+def tolocaltime(timestr): 
     date = timestr.split('+')[0]
     date_dt = datetime.strptime(date, tformat)
     # Check for DST here
@@ -72,7 +80,8 @@ def tolocaltime(timestr): # Receive the string, turn into datetime using strptim
     return datetime.strftime(date_dt, sformat)
 
 # Removes unneeded items from checked-in machines, then gets first 10 (or all if --all) items
-# TODO: how to guarantee that items are the most recent ones? OrderedDict is for 2.7
+# TODO: how to guarantee that items are the most recent ones? OrderedDict is for 2.7 only
+# TODO: add warning if sifting depletes the list?
 def sift(check_ins):
     machinelist = check_ins.values() # convert dict to list of jsons
     if options.linux:
@@ -81,16 +90,16 @@ def sift(check_ins):
         machinelist = [item for item in machinelist if item["os"] == "Windows"]
     if options.avl:
         machinelist = [item for item in machinelist if item["userAtConsole"] is False]
-    if options.busy: # TODO: do sessioncount instead?
+    if options.busy: # Note: use userCount instead?
         machinelist = [item for item in machinelist if item["userAtConsole"] is True]
     if options.research:
         machinelist = [item for item in machinelist if item["edition"] == "research"]
     if options.instructional:
         machinelist = [item for item in machinelist if item["edition"] == "instructional"]
     if options.model is not None:
-        machinelist = [item for item in machinelist if item["model"] == options.model] 
+        machinelist = [item for item in machinelist if item["model"].find(options.model) != -1] 
     if options.host is not None:
-        machinelist = [item for item in machinelist if item["hostname"] == options.host]
+        machinelist = [item for item in machinelist if item["hostname"].find(options.host) != -1]
     #####
     if options.all:
         return machinelist # return all
@@ -98,6 +107,9 @@ def sift(check_ins):
 
 # Look at other options here to change header items
 def getheader():
+    if options.field is not None:
+        # TODO: find field in validfields, reparse
+        return [ "Host name", options.field ]
     return [ "Host name", "Type", "Edition", "Load", "Disp", "Last Report" ]
 
 # Print header, sift items, print items    
@@ -156,39 +168,45 @@ def recv_data(retries):
         recv_data(retries - 1)
 
 if __name__ == "__main__":
-    # All arguments
     parser = argparse.ArgumentParser()
     # Arguments to filter out list of hosts
-    parser.add_argument('--all', '-a', action='store_true', default=False, 
+    # Number of items
+    parser.add_argument('--all', '-a', action='store_true', 
                         help="Unlimited list length") # 10 items by default
-    parser.add_argument("--linux", "-l", action='store_true', default=False, dest="linux",
+    # OS type
+    parser.add_argument("--linux", "-l", action='store_true', dest="linux",
                         help="Return only Linux workstations")
-    parser.add_argument('--win','-w', action='store_true', default=False, dest="windows",
+    parser.add_argument('--win','-w', action='store_true', dest="windows",
                         help="Return only Windows workstations")
-    parser.add_argument('--avl', action="store_true", default=False, dest="avl",
+    # Is being used or not
+    parser.add_argument('--avl', action="store_true", dest="avl",
                         help="Return only available machines")
-    parser.add_argument("--busy", "-b", action="store_true", default=False, 
+    parser.add_argument("--busy", "-b", action="store_true", 
                         help="Return only busy machines")
-    parser.add_argument("--research", "-R", action="store_true", default=False, dest="research",
+    # Research or instructional
+    parser.add_argument("--research", "-R", action="store_true", dest="research",
                         help="Return only research edition machines")
-    parser.add_argument("--instructional", "-I", action="store_true", default=False, dest="instructional",
+    parser.add_argument("--instructional", "-I", action="store_true", dest="instructional",
                         help="Return only instructional edition machines")
+    # Custom ones (require string specifier to search)
     parser.add_argument("--model", action="store", dest="model",
-                        help="Return only machines with specified model name")
+                        help="Return only machines containing <string> in model name")
     parser.add_argument("--host", action="store", dest="host",
-                        help="Return only machines matching given hostname")
+                        help="Return only machines containing <string> in hostname")
+    parser.add_argument("--field", action="store", dest="field",
+                        help="Return only hostname plus specified field <string>")
     # Arguments to modify functioning of hostinfo cmd
     parser.add_argument("--retry", action="store", default=5, type=int,
                         help="Retry query up to X times (5 times by default)")
     parser.add_argument("--raw", "-r", action="store_true",
                         help="Return only raw data")
-    parser.add_argument("--noheader", action="store_true", default=False,
+    parser.add_argument("--noheader", action="store_true",
                         help="Return data without header")
-    parser.add_argument("--quiet", "-q", action="store_true", default=False,
+    parser.add_argument("--quiet", "-q", action="store_true",
                         help="Suppresses all warnings")
     
     options = parser.parse_args()
-
+    
     # Argument conflict resolution
     if options.linux and options.windows:
         options.linux = False
@@ -196,6 +214,10 @@ if __name__ == "__main__":
     if options.busy and options.avl:
         options.busy = False
         verbose_print("Warning: --avl overrides --busy")
+    
+    # TODO: which --field items are valid now? Old hostinfo uses: 
+    # report/last report, load/load avgs, ipaddr/ip address, display, location, type, model
+    
     # Get dict of host items
     check_ins = recv_data(options.retry)
     if len(check_ins) == 0:
@@ -203,3 +225,26 @@ if __name__ == "__main__":
     
     # Begin sifting and printout of data
     main(check_ins)
+
+'''
+{'clientTimestamp': '2015-06-09T20:20:22+0000', 
+'product': 'RHEL6.6-CLSE', 
+'cpuPercent': 1.3, 
+'success': True, 
+'clientVersion': '2.0', 
+'memPhysTotal': '16289712', 
+'memVirtTotal': '16336852', 
+'ip': '141.213.40.170', 
+'hostname': 'caen-sysstdp03.engin.umich.edu', 
+'pagefaultspersec': 461.44400000000007, 
+'edition': 'research', 
+'cpuCoreCount': 4, 
+'version': '2014', 
+'userAtConsole': True, 
+'memPhysUsed': 1794912, 
+'memVirtUsed': 2479808, 
+'userCount': 1, 
+'os': 'Linux', 
+'model': 'Hewlett-Packard HP Z210 Workstation', 
+'cpuLoad5': '0.02'}
+'''
