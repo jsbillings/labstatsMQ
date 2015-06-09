@@ -7,8 +7,7 @@ from datetime import datetime, date, timedelta
 import cPickle as pickle
 import zlib
 
-# Pair header item with length of the "lines" under it as ints
-# Then choose which header items you need
+# Pair header item with length of the "lines" under it
 headerlines = { "Host name" : 19, 
                 "Type" : 7, 
                 "Edition" : 11, 
@@ -35,6 +34,11 @@ headerfmt = { "Host name" : '%-19.19s',
 sformat = "%m/%d %I:%M%p"
 tformat = "%Y-%m-%dT%H:%M:%S" # 2015-06-04T19:39:43+0000
 
+# Prints if --quiet not enabled
+def verbose_print(message):
+    if not options.quiet:
+        print message
+
 # Note: may be omitted or changed based on other options later
 def printheader(headeritems):
     print "The current time is:", time.asctime(time.localtime()) # eg. Thu May 21 13:25:25 2015
@@ -46,17 +50,14 @@ def printheader(headeritems):
     for item in headeritems:
         print '-' * headerlines[item],
 
-# TODO: redo formatted string; eg timestamp is a string and not float anymore
+# Print the actual formatted hosts and their info
 def printitem(headeritems, printlist):
     print
     for json in printlist:
         for item in headeritems:
             print headerfmt[item] % json[headernames[item]],
+        print
         
-    # hostname, type, edition, cpu load, userLoggedIn (physically at computer), time checked in
-    #print json["hostname"], json["os"], json["edition"], json["cpuLoad5"], json["userAtConsole"], json["clientTimestamp"]
-    #print '%-19.19s %-5s %-11s%6.2f %3s %-4s %13s %s' % (json["hostname"], json["os"], json["edition"], json["cpuLoad5"], json["userAtConsole"], json["clientTimestamp"])
-
 # Returns time string of format: 06/03 04:29PM
 def tolocaltime(timestr): # Receive the string, turn into datetime using strptime, turn into local time string with strftime
     date = timestr.split('+')[0]
@@ -70,6 +71,8 @@ def tolocaltime(timestr): # Receive the string, turn into datetime using strptim
     date_dt = date_dt + offset
     return datetime.strftime(date_dt, sformat)
 
+# Removes unneeded items from checked-in machines, then gets first 10 (or all if --all) items
+# TODO: how to guarantee that items are the most recent ones? OrderedDict is for 2.7
 def sift(check_ins):
     machinelist = check_ins.values() # convert dict to list of jsons
     if options.linux:
@@ -78,6 +81,8 @@ def sift(check_ins):
         machinelist = [item for item in machinelist if item["os"] == "Windows"]
     if options.avl:
         machinelist = [item for item in machinelist if item["userAtConsole"] is False]
+    if options.busy: # TODO: do sessioncount instead?
+        machinelist = [item for item in machinelist if item["userAtConsole"] is True]
     if options.research:
         machinelist = [item for item in machinelist if item["edition"] == "research"]
     if options.instructional:
@@ -115,7 +120,6 @@ def main(check_ins):
     printitem(headeritems, toprint)
 
 # Receive check-in data; waits up to 5 seconds for it (quits otherwise)
-# TODO: does all 5 tries at once, needs to reset linger each retry
 def recv_data(retries):
     context = zmq.Context()
     requester = context.socket(zmq.REQ)
@@ -123,73 +127,79 @@ def recv_data(retries):
     requester.connect('tcp://localhost:5558')
     poller = zmq.Poller()
     poller.register(requester, zmq.POLLIN)
-    while retries >= 0:
-        try:
-            requester.send("")
-            if poller.poll(5000): # wait up to 5 seconds
-                zipped = requester.recv()
-                pickled = zlib.decompress(zipped)
-                return pickle.loads(pickled) # return type dict
-            else:
-                raise Exception("Timeout occurred while processing hostinfo request")
-        except zmq.ZMQError as e:
-            print "Error: hostinfo-client not connected, unable to get labstats data. ", str(e)
-            print "Requesting data again..."
-            retries -= 1
-        except pickle.PickleError:
-            print "Error: could not unpickle received data. ", str(e)
-            exit(1)
-        except zlib.error as e:
-            print "Error: could not unzip received data. ", str(e)
-            exit(1)
-        except Exception as e:
-            print str(e)
-            print "Requesting data again..."
-            retries -= 1
-    print "Error: all retries used. Exiting..."
-    exit(1)
+    if (retries < 0):
+        print "\nError: all retries used. Exiting..."
+        exit(1)
+    try:
+        requester.send("")
+        if poller.poll(5000): # wait up to 5 seconds
+            zipped = requester.recv()
+            pickled = zlib.decompress(zipped)
+            return pickle.loads(pickled) # return type dict
+        else:
+            raise Exception("Timeout occurred while processing hostinfo request.")
+    except zmq.ZMQError as e:
+        print "Error: hostinfo-client not connected.", str(e)+".",
+        if retries > 0:
+            print "Requesting data again..." 
+        recv_data(retries - 1)
+    except pickle.PickleError:
+        print "Error: could not unpickle received data.", str(e)+". Exiting..."
+        exit(1)
+    except zlib.error as e:
+        print "Error: could not unzip received data.", str(e)+". Exiting..."
+        exit(1)
+    except Exception as e:
+        print str(e),
+        if retries > 0:
+            print "Requesting data again..." 
+        recv_data(retries - 1)
 
 if __name__ == "__main__":
     # All arguments
     parser = argparse.ArgumentParser()
     # Arguments to filter out list of hosts
-    parser.add_argument('--linux', '-l', action='store_true', default=False, dest="linux",
-                        help='Prints only Linux workstations')
     parser.add_argument('--all', '-a', action='store_true', default=False, 
-                        help='Unlimited list length') # 10 items by default
+                        help="Unlimited list length") # 10 items by default
+    parser.add_argument("--linux", "-l", action='store_true', default=False, dest="linux",
+                        help="Return only Linux workstations")
     parser.add_argument('--win','-w', action='store_true', default=False, dest="windows",
-                        help='Prints only Windows workstations')
+                        help="Return only Windows workstations")
     parser.add_argument('--avl', action="store_true", default=False, dest="avl",
-                        help="Prints only available machines")
-    #parser.add_argument("--busy", "-b", action="store_true", default=False, 
-    #                    help="Prints only busy machines")
+                        help="Return only available machines")
+    parser.add_argument("--busy", "-b", action="store_true", default=False, 
+                        help="Return only busy machines")
     parser.add_argument("--research", "-R", action="store_true", default=False, dest="research",
                         help="Return only research edition machines")
     parser.add_argument("--instructional", "-I", action="store_true", default=False, dest="instructional",
                         help="Return only instructional edition machines")
     parser.add_argument("--model", action="store", dest="model",
-                        help="Prints only machines with specified model name")
+                        help="Return only machines with specified model name")
     parser.add_argument("--host", action="store", dest="host",
                         help="Return only machines matching given hostname")
     # Arguments to modify functioning of hostinfo cmd
     parser.add_argument("--retry", action="store", default=5, type=int,
                         help="Retry query up to X times (5 times by default)")
-    parser.add_argument("--raw", "-r", action="store_true", default=False,
-                        help="Print only raw data")
+    parser.add_argument("--raw", "-r", action="store_true",
+                        help="Return only raw data")
     parser.add_argument("--noheader", action="store_true", default=False,
-                        help="Prints data without header")
+                        help="Return data without header")
+    parser.add_argument("--quiet", "-q", action="store_true", default=False,
+                        help="Suppresses all warnings")
     
     options = parser.parse_args()
 
     # Argument conflict resolution
     if options.linux and options.windows:
         options.linux = False
-        print "Warning: --win overrides --linux"
-    
+        verbose_print("Warning: --win overrides --linux")
+    if options.busy and options.avl:
+        options.busy = False
+        verbose_print("Warning: --avl overrides --busy")
     # Get dict of host items
     check_ins = recv_data(options.retry)
     if len(check_ins) == 0:
-        print "Warning: empty check-ins received"
+        verbose_print("Warning: empty check-ins received")
     
     # Begin sifting and printout of data
     main(check_ins)
