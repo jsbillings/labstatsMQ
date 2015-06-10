@@ -31,11 +31,30 @@ headerfmt = { "Host name" : '%-33.33s',
               "Edition" : '%-11s', 
               "Load" : '%-5s', 
               "Disp" : '%-4s', 
-              "Last Report" : '%s',
+              "Last Report" : '%-s',
               "IP Address" : '%-15.15s' } 
 
-# TODO: List of fields allowed for --field
-validfields = [ "Report", "Load", "IPAddr", "Display", "Location", "Type", "Model" ]
+# Translation table of fields for --field. First item of each subarray is
+# the "proper" name used for the header dicts above
+validfields = [ [ "Last Report", "report", "clienttimestamp", "timestamp", "time"],
+[ "Product", "product" ],
+[ "CPU Percent", "cpupercent", "percent" ],
+[ "Total Phys. Mem", "memphystotal", "phystotal", "totalphys", "physmem" ],
+[ "Total Virt. Mem", "memvirttotal", "virttotal", "totalvirt", "virtmem" ],
+[ "IP Address", "ip", "ipaddr", "ipadd" ],
+[ "Host name", "hostname", "host", "name" ],
+[ "Pagefaults/s", "pf", "pagefaults", "pagefaultspersec", "pfaults" ],
+[ "Edition", "edition", "ed" ],
+[ "Cores", "cpucorecount", "numcores", "ncores", "cores", "corecount" ],
+[ "Version", "version", "v" ],
+[ "Display", "display", "disp", "useratconsole", "inuse" ],
+[ "Used Phys. Mem", "memphysused", "usedphys", "physused", ],
+[ "Used Virt. Mem", ],
+[ "User Count", ],
+[ "OS", "os", "type" ],
+[ "Model", "model" ],
+[ "CPU Load5", "cpuload5", "cpuload", "load" ],
+[ "Location", "location", "loc" ] ]
 
 # Time formatters
 sformat = "%m/%d %I:%M%p"
@@ -79,9 +98,16 @@ def tolocaltime(timestr):
     date_dt = date_dt + offset
     return datetime.strftime(date_dt, sformat)
 
+# Custom comparator for host list
+def compareTime(json1, json2):
+    if json1["clientTimestamp"] < json2["clientTimestamp"]:
+        return -1
+    elif json1["clientTimestamp"] == json2["clientTimestamp"]:
+        return 0
+    return 1;
+
 # Removes unneeded items from checked-in machines, then gets first 10 (or all if --all) items
-# TODO: how to guarantee that items are the most recent ones? OrderedDict is for 2.7 only
-# TODO: add warning if sifting depletes the list?
+# TODO: how to guarantee that items are ordered by the most recent ones? OrderedDict is for 2.7 only
 def sift(check_ins):
     machinelist = check_ins.values() # convert dict to list of jsons
     if options.linux:
@@ -90,7 +116,7 @@ def sift(check_ins):
         machinelist = [item for item in machinelist if item["os"] == "Windows"]
     if options.avl:
         machinelist = [item for item in machinelist if item["userAtConsole"] is False]
-    if options.busy: # Note: use userCount instead?
+    if options.busy: 
         machinelist = [item for item in machinelist if item["userAtConsole"] is True]
     if options.research:
         machinelist = [item for item in machinelist if item["edition"] == "research"]
@@ -101,6 +127,10 @@ def sift(check_ins):
     if options.host is not None:
         machinelist = [item for item in machinelist if item["hostname"].find(options.host) != -1]
     #####
+    # Check if machinelist is depleted by the sifting
+    if len(machinelist) == 0:
+        verbose_print("Warning: host list depleted by sifting. List now empty")
+    # Return the proper number of list items
     if options.all:
         return machinelist # return all
     return machinelist[:10] # return first 10 items
@@ -110,6 +140,9 @@ def getheader():
     if options.field is not None:
         # TODO: find field in validfields, reparse
         return [ "Host name", options.field ]
+    if options.models:
+        # TODO: Last report gone, now uses "Type and Model" combined into one, then load, then disp
+        return [ "Host name", "Type", "Edition", "Load", "Disp", "Model" ]
     return [ "Host name", "Type", "Edition", "Load", "Disp", "Last Report" ]
 
 # Print header, sift items, print items    
@@ -128,7 +161,7 @@ def main(check_ins):
         json['clientTimestamp'] = tolocaltime(json['clientTimestamp'])
         json['edition'] = json['edition'].upper()
         json['userAtConsole'] = "YES" if json['userAtConsole'] is True else "NO"
-        json['os'] = "LINUX" if json['os'] == "Linux" else "WINDOWS"
+        json['os'] = json['os'].upper()
     printitem(headeritems, toprint)
 
 # Receive check-in data; waits up to 5 seconds for it (quits otherwise)
@@ -136,7 +169,7 @@ def recv_data(retries):
     context = zmq.Context()
     requester = context.socket(zmq.REQ)
     requester.setsockopt(zmq.LINGER, 0) 
-    requester.connect('tcp://localhost:5558')
+    requester.connect('tcp://%s:5558' % options.server)
     poller = zmq.Poller()
     poller.register(requester, zmq.POLLIN)
     if (retries < 0):
@@ -188,22 +221,27 @@ if __name__ == "__main__":
                         help="Return only research edition machines")
     parser.add_argument("--instructional", "-I", action="store_true", dest="instructional",
                         help="Return only instructional edition machines")
-    # Custom ones (require string specifier to search)
+    # Search terms
     parser.add_argument("--model", action="store", dest="model",
                         help="Return only machines containing <string> in model name")
     parser.add_argument("--host", action="store", dest="host",
                         help="Return only machines containing <string> in hostname")
+    # Arguments that change header
     parser.add_argument("--field", action="store", dest="field",
                         help="Return only hostname plus specified field <string>")
+    parser.add_argument("--models", "-m", action="store_true", 
+                        help="Replace last report time with models")
+    parser.add_argument("--noheader", action="store_true",
+                        help="Return data without header")
     # Arguments to modify functioning of hostinfo cmd
     parser.add_argument("--retry", action="store", default=5, type=int,
                         help="Retry query up to X times (5 times by default)")
     parser.add_argument("--raw", "-r", action="store_true",
                         help="Return only raw data")
-    parser.add_argument("--noheader", action="store_true",
-                        help="Return data without header")
     parser.add_argument("--quiet", "-q", action="store_true",
                         help="Suppresses all warnings")
+    parser.add_argument("--server", "-s", action="store", default="localhost",
+                        help="Choose custom server to request from")
     
     options = parser.parse_args()
     
@@ -214,9 +252,6 @@ if __name__ == "__main__":
     if options.busy and options.avl:
         options.busy = False
         verbose_print("Warning: --avl overrides --busy")
-    
-    # TODO: which --field items are valid now? Old hostinfo uses: 
-    # report/last report, load/load avgs, ipaddr/ip address, display, location, type, model
     
     # Get dict of host items
     check_ins = recv_data(options.retry)
@@ -248,3 +283,11 @@ if __name__ == "__main__":
 'model': 'Hewlett-Packard HP Z210 Workstation', 
 'cpuLoad5': '0.02'}
 '''
+
+'''
+'clientTimestamp', 'product', 'cpuPercent', 'success', 'clientVersion', 
+'memPhysTotal', 'memVirtTotal', 'ip', 'hostname', 'pagefaultspersec', 'edition', 
+'cpuCoreCount', 'version', 'userAtConsole', 'memPhysUsed', 'memVirtUsed', 
+'userCount', 'os', 'model', 'cpuLoad5'
+'''
+
