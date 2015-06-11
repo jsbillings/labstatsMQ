@@ -6,15 +6,26 @@ import argparse
 from datetime import datetime, date, timedelta
 import cPickle as pickle
 import zlib
-
+##############################################################################
 # Pair header item with length of the "lines" under it/length limit
-headerlines = { "Host name" : 33,
+headerlines = { "Host name" : 24,
                 "Type" : 7, 
                 "Edition" : 11, 
                 "Load" : 5, 
                 "Disp" : 4, 
                 "Last Report" : 13,
-                "IP Address" : 15 } 
+                "Ipaddr" : 15,
+                "Product" : 15,
+                "Version" : 4,
+                "Session" : 3,
+                "Model" : 23,
+                "Cores" : 5,
+                "CPU%" : 5,
+                "Pf/s" : 5,
+                "TotalPhys" : 9,
+                "TotalVirt" : 9,
+                "Used Phys" : 9,
+                "Used Virt" : 9 } 
 
 # Pair header item with json key
 headernames = { "Host name" : "hostname", 
@@ -23,42 +34,68 @@ headernames = { "Host name" : "hostname",
                 "Load" : "cpuLoad5", 
                 "Disp" : "userAtConsole", 
                 "Last Report" : "clientTimestamp",
-                "IP Address" : "ip" }
+                "Ipaddr" : "ip",
+                "Product" : "product",
+                "Version" : "version",
+                "Session" : "userCount",
+                "Model" : "model",
+                "Cores" : "cpuCoreCount",
+                "CPU%" : "cpuPercent",
+                "Pf/s" : "pagefaultspersec",
+                "TotalPhys" : "memPhysTotal", 
+                "TotalVirt" : "memVirtTotal",
+                "Used Phys" : "memPhysUsed",
+                "Used Virt" : "memVirtUsed" }
 
 # Pair header item with format flag/specifiers
-headerfmt = { "Host name" : '%-33.33s', 
+headerfmt = { "Host name" : '%-24.24s', 
               "Type" : '%-7s', 
               "Edition" : '%-11s', 
               "Load" : '%-5s', 
               "Disp" : '%-4s', 
               "Last Report" : '%-s',
-              "IP Address" : '%-15.15s' } 
+              "Ipaddr" : '%-15.15s',
+              "Product" : '%-15.15s',
+              "Version" : '%-4.4s',
+              "Session" : '%-3i',
+              "Model" : '%-23.23s',
+              "Cores" : '%5i',
+              "CPU%" : '%-5.2f',
+              "Pf/s" : '%-5.1f',
+              "TotalPhys" : '%-9s',
+              "TotalVirt" : '%-9s',
+              "Used Phys" : '%-9i',
+              "Used Virt" : '%-9i' } 
+
+# Note: why is memPhysTotal/virt a string and memPhysUsed/virt an int?
 
 # Translation table of fields for --field. First item of each subarray is
 # the "proper" name used for the header dicts above
 validfields = [ [ "Last Report", "report", "clienttimestamp", "timestamp", "time"],
 [ "Product", "product" ],
-[ "CPU Percent", "cpupercent", "percent" ],
-[ "Total Phys. Mem", "memphystotal", "phystotal", "totalphys", "physmem" ],
-[ "Total Virt. Mem", "memvirttotal", "virttotal", "totalvirt", "virtmem" ],
-[ "IP Address", "ip", "ipaddr", "ipadd" ],
+[ "CPU%", "cpupercent", "percent", "cpu%" ],
+[ "TotalPhys", "memphystotal", "phystotal", "totalphys", "physmem" ],
+[ "TotalVirt", "memvirttotal", "virttotal", "totalvirt", "virtmem" ],
+[ "Ipaddr", "ip", "ipaddr", "ipadd" ],
 [ "Host name", "hostname", "host", "name" ],
-[ "Pagefaults/s", "pf", "pagefaults", "pagefaultspersec", "pfaults" ],
+[ "Pf/s", "pf", "pagefaults", "pagefaultspersec", "pfaults" ],
 [ "Edition", "edition", "ed" ],
 [ "Cores", "cpucorecount", "numcores", "ncores", "cores", "corecount" ],
 [ "Version", "version", "v" ],
-[ "Display", "display", "disp", "useratconsole", "inuse" ],
-[ "Used Phys. Mem", "memphysused", "usedphys", "physused", ],
-[ "Used Virt. Mem", ],
-[ "User Count", ],
-[ "OS", "os", "type" ],
+[ "Display", "display", "disp", "useratconsole", "inuse", "loggedin" ],
+[ "Used Phys", "memphysused", "usedphys", "physused" ],
+[ "Used Virt", "memvirtused", "usedvirt", "virtused" ],
+[ "Session", "session", "usercount" ],
+[ "Type", "os", "type" ],
 [ "Model", "model" ],
-[ "CPU Load5", "cpuload5", "cpuload", "load" ],
+[ "Load", "load", "cpuload5", "cpuload" ],
 [ "Location", "location", "loc" ] ]
 
 # Time formatters
 sformat = "%m/%d %I:%M%p"
 tformat = "%Y-%m-%dT%H:%M:%S" # 2015-06-04T19:39:43+0000
+
+###############################################################################
 
 # Prints if --quiet not enabled
 def verbose_print(message):
@@ -85,7 +122,6 @@ def printitem(headeritems, printlist):
         print
         
 # Returns time string of format: 06/03 04:29PM
-# Receive the string, turn into datetime using strptime, turn into local time string with strftime
 def tolocaltime(timestr): 
     date = timestr.split('+')[0]
     date_dt = datetime.strptime(date, tformat)
@@ -106,8 +142,8 @@ def compareTime(json1, json2):
         return 0
     return 1;
 
-# Removes unneeded items from checked-in machines, then gets first 10 (or all if --all) items
-# TODO: how to guarantee that items are ordered by the most recent ones? OrderedDict is for 2.7 only
+# Removes unneeded items from checked-in machines,
+# then gets first 10 (or all if --all) items in sorted order
 def sift(check_ins):
     machinelist = check_ins.values() # convert dict to list of jsons
     if options.linux:
@@ -132,17 +168,39 @@ def sift(check_ins):
         verbose_print("Warning: host list depleted by sifting. List now empty")
     # Return the proper number of list items
     if options.all:
-        return machinelist # return all
-    return machinelist[:10] # return first 10 items
+        return sorted(machinelist, cmp=compareTime) # return all
+    return sorted(machinelist[:10], cmp=compareTime) # return first 10 items
 
 # Look at other options here to change header items
 def getheader():
+    global validfields
     if options.field is not None:
-        # TODO: find field in validfields, reparse
-        return [ "Host name", options.field ]
+        global headerlines, headerfmt
+        headerlines["Host name"] = 45
+        headerfmt["Host name"] = '%-45.45s'
+        # elongate Host name to 45 characters, --field to 29 chars
+        # search for field here
+        for array in validfields:
+            if options.field.lower() in array:
+                options.field = array[0]
+                headerlines[options.field] = 29
+                formatter = headerfmt[options.field][-1] # last char gives s or f or i
+                if formatter == 's':
+                    headerfmt[options.field] = '%-29.29s'
+                elif formatter == 'i':
+                    headerfmt[options.field] = '%-29i'
+                elif formatter == 'f':
+                    headerfmt[options.field] = '%-29.2f'
+                else:
+                    verbose_print("Warning: unknown formatter")
+                    headerfmt[options.field] = '$-29' + formatter
+                return [ "Host name", options.field ]
+        verbose_print("Error: " + options.field + " is not a valid field name.")
+        exit(1)
     if options.models:
-        # TODO: Last report gone, now uses "Type and Model" combined into one, then load, then disp
-        return [ "Host name", "Type", "Edition", "Load", "Disp", "Model" ]
+        # TODO: "Type and Model" gets combined into one
+        return [ "Host name", "Type", "Model", "Load", "Disp" ]
+    # Default header
     return [ "Host name", "Type", "Edition", "Load", "Disp", "Last Report" ]
 
 # Print header, sift items, print items    
@@ -164,7 +222,8 @@ def main(check_ins):
         json['os'] = json['os'].upper()
     printitem(headeritems, toprint)
 
-# Receive check-in data; waits up to 5 seconds for it (quits otherwise)
+# Receive check-in data; waits up to 5 seconds for it
+# Can retry up to --retry times (5 by default)
 def recv_data(retries):
     context = zmq.Context()
     requester = context.socket(zmq.REQ)
@@ -231,6 +290,8 @@ if __name__ == "__main__":
                         help="Return only hostname plus specified field <string>")
     parser.add_argument("--models", "-m", action="store_true", 
                         help="Replace last report time with models")
+    parser.add_argument("--loc", action="store_true", dest="loc",
+                        help="Replace load and last report time with location") # to implement later
     parser.add_argument("--noheader", action="store_true",
                         help="Return data without header")
     # Arguments to modify functioning of hostinfo cmd
@@ -252,7 +313,16 @@ if __name__ == "__main__":
     if options.busy and options.avl:
         options.busy = False
         verbose_print("Warning: --avl overrides --busy")
-    
+    # --raw overrides all
+    if options.raw and (options.model or options.avl or options.busy or options.models or options.loc or options.field):
+        verbose_print("Warning: --raw overrides --model, --models, --avl, --busy, --loc, and --field")
+    # --models overrides --loc and --field flags
+    if options.models and (options.field or options.loc):
+        verbose_print("Warning: --models overrides --field and --loc")
+    # --loc overrides --field
+    if options.loc and options.field:
+        verbose_print("Warning: --loc overrides --field")
+
     # Get dict of host items
     check_ins = recv_data(options.retry)
     if len(check_ins) == 0:
