@@ -70,9 +70,9 @@ def gettotalmem():
         for line in meminfo.readlines():
                 memInfo = line.split()
                 if memInfo[0] == "MemTotal:":
-                        out_dict['memPhysTotal'] = memInfo[1]
+                        out_dict['memPhysTotal'] = int(memInfo[1])
                 elif memInfo[0] == "CommitLimit:":
-                        out_dict['memVirtTotal'] = memInfo[1]
+                        out_dict['memVirtTotal'] = int(memInfo[1])
         meminfo.close()
         return out_dict
 '''
@@ -177,6 +177,9 @@ def getpagefaults():
 		sarlines = sarlines + sarcmd.communicate()[0].splitlines()[::-1]
 		if sarcmd.returncode != 0:
 			return failure_output("Exception encountered: sar -B failed to communicate properly")
+		# Logs most likely depleted if still not enough lines
+		if len(sarlines) < 15:
+			return failure_output("Error: not enough sar logs to work from")
 	# Get sum of minor and major pagefaults
 	keywords = [ 'Average', 'Linux', 'RESTART', 'pgpgin/s' ] # removal keywords
 	sum = 0.0
