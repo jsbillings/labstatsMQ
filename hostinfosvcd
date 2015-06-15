@@ -1,0 +1,151 @@
+#!/bin/sh
+#
+# hostsvcd: A script for the (temporary) testing of hostinfosvc
+#
+# chkconfig: 35 82 16
+# description: Start/stop the hostinfo service daemon
+# processname: hostinfoscvd
+# pidfile: /var/run/hostinfo/hostinfosvc.pid
+
+### BEGIN INIT INFO
+# Provides: hostinfosvcd
+# Required-Start: $local_fs $network
+# Required-Stop: $local_fs $network
+# Default-Start: 0 1 2 6
+# Default-Stop: 3 5
+# Short-Description: Start/stop the hostinfo service daemon
+# Description: Starts/stops a daemonized version of the hostinfo service.
+#	       Listens to port 5557 for JSON, includes it in a dict of JSONs
+#	       and binds to port 5558 to reply to hostinfo's request for 
+#	       the dict on a needed basis.
+### END INIT INFO
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Script directory
+dir=/opt/hostinfosvc/
+prog="hostinfosvc"
+program=$dir$prog.py
+
+# Script pidfile directory
+pidfile=/var/run/hostinfo/$prog.pid
+pidname="$prog.pid"
+PID=""
+
+# TODO: hostinfosvc uses multiprocessing, so multiple PIDs generated
+# Will report failure even if successful
+start() {
+    update_pid
+    # Checks your privilege. :^)
+    if [ $UID -ne 0 ] ; then
+	failure
+	echo "User has insufficient privilege."
+	exit 4
+    elif [ ! -z "$PID" ] ; then
+	failure
+	echo "Instance of hostinfo service already seems to be running."
+	exit 4
+    fi
+    
+    # Note: no need to try and process other flags
+    python $program -d
+
+    # check that it's running by check pid was created
+    if [ -e "$pidfile" ] ; then
+	success
+	echo "Started $prog"
+    else
+        failure
+	echo "$prog failed to start"
+    fi
+}
+
+stop() {
+    # checks sudo/root
+    if [ $UID -ne 0 ] ; then
+	failure
+	echo "Can't stop hostinfo service; user has insufficient privilege."
+	exit 4
+    fi
+
+    # Check that collector is actually running (check its pid)
+    update_pid 
+    if [ -z $PID ] ; then
+	failure
+	echo "PID not found. Hostinfosvc not running?"
+	exit 4
+    fi
+    
+    # Stops collector
+    kill "$PID"
+    success 
+    echo "Stopped $prog"
+    # Script handles erasure of the pidfile
+}
+
+restart() {
+    stop
+    start
+}
+
+reload() {
+    restart
+}
+
+force_reload() {
+    restart
+}
+
+
+rh_status() {
+    update_pid 
+    if [ -z "$PID" ] ; then # PID is null; collector not running
+            echo "hostinfosvc is not running"
+    else
+	echo "hostinfosvc is running with pid" $PID
+    fi
+}
+
+update_pid() {
+    if [ -e "$pidfile" ] ; then
+        PID=$(head -n 1 $pidfile)
+    else       
+        PID=`ps -ef | grep hostinfosvc | grep python | awk '{print $2}'`
+    fi
+}
+
+
+rh_status_q() {
+    rh_status >/dev/null 2>&1
+}
+
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+	restart
+        ;;
+    reload)
+        reload
+        ;;
+    force-reload)
+        force_reload
+        ;;
+    status)
+        rh_status
+        ;;
+    condrestart|try-restart)
+        rh_status_q || exit 0
+        restart
+        ;;
+    *)
+        echo $"Usage: $0 {start|stop|status|restart|condrestart|try-restart|reload|force-reload}"
+        exit 2
+esac
+exit $?
