@@ -77,8 +77,8 @@ stop() {
 	exit 4
     fi
     
-    # Stops collector
-    kill "$PID"
+    # Stops service
+    killpids
     success 
     echo "Stopped $prog"
     # Script handles erasure of the pidfile
@@ -97,7 +97,6 @@ force_reload() {
     restart
 }
 
-
 rh_status() {
     update_pid 
     if [ -z "$PID" ] ; then # PID is null; collector not running
@@ -110,16 +109,20 @@ rh_status() {
 update_pid() {
     if [ -e "$pidfile" ] ; then
         PID=$(head -n 1 $pidfile)
-    else       
-        PID=`ps -ef | grep hostinfosvc | grep python | awk '{print $2}'`
+    else
+	PID=""
     fi
 }
 
+killpids() {
+    # test which pids
+    ps -ef | grep hostinfosvc | grep python | awk '{print $2}'
+    ps -ef | grep hostinfosvc | grep python | awk '{print $2}' | xargs kill -9
+}
 
 rh_status_q() {
     rh_status >/dev/null 2>&1
 }
-
 
 case "$1" in
     start)
