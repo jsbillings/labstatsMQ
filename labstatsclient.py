@@ -207,7 +207,7 @@ def getcpuload():
         except Exception as e:
                 return failure_output("Exception encountered: could not open /proc/loadavg")
 
-        load = loadavg.read().split(" ")[1]
+        load = float(loadavg.read().split(" ")[1])
         loadavg.close()
 
         mpstat = Popen(['mpstat', '1', '5'], stdout=PIPE)
