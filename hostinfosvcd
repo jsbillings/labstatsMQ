@@ -118,6 +118,9 @@ killpids() {
     # test which pids
     ps -ef | grep hostinfosvc | grep python | awk '{print $2}'
     ps -ef | grep hostinfosvc | grep python | awk '{print $2}' | xargs kill -9
+    if [ -e "$pidfile" ] ; then
+	rm /var/run/hostinfo/hostinfosvc.pid
+    fi
 }
 
 rh_status_q() {
