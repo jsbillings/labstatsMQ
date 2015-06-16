@@ -8,9 +8,15 @@ from daemon import Daemon
 import argparse
 import labstatslogger
 
-# Note: add multiprocessing logger? Regular logging may report as separate processes
+# Note: add multiprocessing logger? 
+# Regular logging may report as separate processes
 logger = labstatslogger.logger
 # TODO: make sure manager shares check_ins properly
+
+def clean_quit():
+    if options.daemon:
+        daemon.delpid()
+    exit(1)
 
 # If  killed manually, clean up and quit
 def sigterm_handler(signal, frame):
@@ -28,11 +34,6 @@ def sighup_handler(signal, frame):
 
 signal.signal(signal.SIGTERM, sigterm_handler) 
 signal.signal(signal.SIGHUP, sighup_handler)
-
-def clean_quit():
-    if options.daemon:
-        daemon.delpid()
-    exit(1)
 
 def send_data(context, check_ins):
     sender = context.socket(zmq.REP)
