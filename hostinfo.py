@@ -78,7 +78,7 @@ validfields = [ [ "Last Report", "report", "clienttimestamp", "timestamp", "time
 [ "TotalVirt", "memvirttotal", "virttotal", "totalvirt", "virtmem" ],
 [ "Ipaddr", "ip", "ipaddr", "ipadd" ],
 [ "Host name", "hostname", "host", "name" ],
-[ "Pf/s", "pf", "pagefaults", "pagefaultspersec", "pfaults" ],
+[ "Pf/s", "pf", "pf/s", "pagefaults", "pagefaultspersec", "pfaults" ],
 [ "Edition", "edition", "ed" ],
 [ "Cores", "cpucorecount", "numcores", "ncores", "cores", "corecount" ],
 [ "Version", "version", "v" ],
@@ -142,6 +142,11 @@ def compareTime(json1, json2):
         return 0
     return 1;
 
+# Parse host name to get its location
+def addLocation(item):
+    
+    return
+
 # Removes unneeded items from checked-in machines,
 # then gets first 10 (or all if --all) items in sorted order
 def sift(check_ins):
@@ -196,9 +201,11 @@ def getheader():
                     headerfmt[options.field] = '$-29' + formatter
                 return [ "Host name", options.field ]
         verbose_print("Error: " + options.field + " is not a valid field name.")
-        exit(1)
+        # TODO: remove every first entry from each subarray. Also delete all ' marks?
+        verbose_print("Valid strings:\n"+str(validfields).replace('],', '\n').replace('[', '').replace(']',''))
+        sys.exit()
     if options.models:
-        # TODO: "Type and Model" gets combined into one
+        # TODO: "Type and Model" gets combined into one. Also applies for --loc: type and model, location, disp...
         return [ "Host name", "Type", "Model", "Load", "Disp" ]
     # Default header
     return [ "Host name", "Type", "Edition", "Load", "Disp", "Last Report" ]
@@ -206,9 +213,9 @@ def getheader():
 # Print header, sift items, print items    
 def main(check_ins):
     headeritems = getheader()
+    toprint = sift(check_ins)
     if options.noheader is False:
         printheader(headeritems)
-    toprint = sift(check_ins)
     # Print raw only if enabled, then go back
     if options.raw:
         for item in toprint:
@@ -228,12 +235,16 @@ def recv_data(retries):
     context = zmq.Context()
     requester = context.socket(zmq.REQ)
     requester.setsockopt(zmq.LINGER, 0) 
-    requester.connect('tcp://%s:5558' % options.server)
+    try:
+        requester.connect('tcp://%s:5558' % options.server)
+    except zmq.ZMQError as e:
+        verbose_print("Error: could not connect to port 5558 of "+options.server+". Quitting...")
+        sys.exit()
     poller = zmq.Poller()
     poller.register(requester, zmq.POLLIN)
     if (retries < 0):
-        print "\nError: all retries used. Exiting..."
-        exit(1)
+        verbose_print("\nError: all retries used. Exiting...")
+        sys.exit()
     try:
         requester.send("")
         if poller.poll(5000): # wait up to 5 seconds
@@ -243,20 +254,20 @@ def recv_data(retries):
         else:
             raise Exception("Timeout occurred while processing hostinfo request.")
     except zmq.ZMQError as e:
-        print "Error: hostinfo-client not connected.", str(e)+".",
+        verbose_print("Error: hostinfo-client not connected."+str(e)+".",)
         if retries > 0:
-            print "Requesting data again..." 
+            verbose_print("Requesting data again..." )
         recv_data(retries - 1)
     except pickle.PickleError:
-        print "Error: could not unpickle received data.", str(e)+". Exiting..."
-        exit(1)
+        verbose_print("Error: could not unpickle received data."+str(e)+". Exiting...")
+        sys.exit()
     except zlib.error as e:
-        print "Error: could not unzip received data.", str(e)+". Exiting..."
-        exit(1)
+        verbose_print("Error: could not unzip received data."+str(e)+". Exiting...")
+        sys.exit()
     except Exception as e:
         print str(e),
         if retries > 0:
-            print "Requesting data again..." 
+            verbose_print("Requesting data again..." )
         recv_data(retries - 1)
 
 if __name__ == "__main__":
@@ -326,7 +337,8 @@ if __name__ == "__main__":
     # Get dict of host items
     check_ins = recv_data(options.retry)
     if len(check_ins) == 0:
-        verbose_print("Warning: empty check-ins received")
+        verbose_print("Error: empty check-ins received. Quitting...")
+        sys.exit()
     
     # Begin sifting and printout of data
     main(check_ins)
