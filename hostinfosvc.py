@@ -7,27 +7,32 @@ import cPickle, zlib
 from daemon import Daemon
 import argparse
 import labstatslogger
-
-# Note: add multiprocessing logger? 
-# Regular logging may report as separate processes
-logger = labstatslogger.logger
 # TODO: make sure manager shares check_ins properly
 
+logger = labstatslogger.logger
+
+'''
+Utility functions used by everything else further below 
+'''
+# Deletes pidfile and exits
 def clean_quit():
     if options.daemon:
         daemon.delpid()
-    exit(1)
+    sys.exit(1)
 
-# If  killed manually, clean up and quit
+# Prints and logs message
+def error_output(message):
+    print message
+    logger.warning(message)
+
+# If killed manually, clean up and quit
 def sigterm_handler(signal, frame):
-    print "Caught a SIGTERM"
-    logger.warning("Hostinfo service killed via SIGTERM")
+    error_output("Hostinfo service received a SIGTERM")
     clean_quit()
 
 # If SIGHUP received, do "soft restart" of sockets and files
 def sighup_handler(signal, frame):
-    print "Caught a SIGHUP"
-    logger.warning("Hostinfo service received a SIGHUP")
+    error_output("Hostinfo service received a SIGHUP")
     context.destroy()
     time.sleep(5)
     main()
@@ -35,23 +40,25 @@ def sighup_handler(signal, frame):
 signal.signal(signal.SIGTERM, sigterm_handler) 
 signal.signal(signal.SIGHUP, sighup_handler)
 
+'''
+Function which, upon hostinfo.py's request, returns a pickled, zipped
+list of checked-in machines. Runs alongside puller, so it won't
+interrupt receiving data.
+'''
 def send_data(context, check_ins):
     sender = context.socket(zmq.REP)
     try:
         sender.bind('tcp://*:5558')
     except zmq.ZMQError as e:
-        print "Error: unable to bind to port 5558."
-        logger.warning("Error: unable to bind to port 5558."+str(e))
+        error_output("Error: unable to bind to port 5558."+str(e))
         sys.exit()
     while True:
         try:
             print "Waiting for request..."
             sender.recv()
             print "Received request for data"
-            logger.warning("Received request for data")
         except Exception as e:
-            print "Error while receiving request in sender: ", str(e) 
-            logger.warning("Error while receiving request in sender: "+str(e))
+            error_output("Error while receiving request in sender: "+str(e))
             # operation cannot be accomplished in current state
         try:
             # Pickles and compresses data to send to hostinfo
@@ -60,34 +67,38 @@ def send_data(context, check_ins):
             sender.send(zipped)
             print "Sent zipped pickled data"
         except Exception as e:
-            print "Error while sending data in sender: ", str(e)
-            logger.warning("Error while sending data in sender: "+str(e))
+            error_output("Error while sending data in sender: "+str(e))
 
+'''
+Adds new or overwrites existing check-ins as they are received.
+'''
 def pull_data(context, check_ins):
     client = context.socket(zmq.PULL)
     try:
         client.bind('tcp://*:5557')
     except zmq.ZMQError as e:
-        print "Error: unable to bind to port 5557."
-        logger.warning("Error: unable to bind to port 5557."+str(e))
-        sys.exit()
+        error_output("Error: unable to bind to port 5557."+str(e))
+        sys.exit(1)
     while True:
         try:
             print 'Listening...'
             data = client.recv_json()
             print 'Received message'
-            logger.warning("Received message")
         except Exception as e:
-            print "Error while receiving message in puller: ", str(e)
-            logger.warning("Error while receiving message in puller: "+str(e))
+            error_output("Error while receiving message in puller: "+str(e))
         try:
             # Store only successful reads (?)
             if data['success'] is True:
                 check_ins[data["hostname"]] = data # hostname-json pair
         except Exception as e:
-            print "Error while adding data in puller: ", str(e)
-            logger.warning("Error while adding data in puller: "+str(e))
+            error_output("Error while adding data in puller: "+str(e))
 
+'''
+Runs puller and replier in parallel.
+Checked-in machines are shared in a Manager dict (should properly share the data).
+In case of exit, main() terminates both processes cleanly.
+(However, if daemonized, hostinfosvcd must clean up after it.)
+'''
 def main():
     context = zmq.Context()
     manager = Manager()
