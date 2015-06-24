@@ -36,12 +36,9 @@ data_dict = {
         'success' : True
 }
 
-###############################################################################################
-# Static functions used in static_data()
-
-'''
-Gets model of machine. Requires root access to use dmidecode
-'''
+# Static data functions
+##############################################################################
+# Gets model of machine. Requires root access to use dmidecode
 def getmodel():
         out_dict = dict()
 	dmisysdata = dmidecode.system()
@@ -58,9 +55,8 @@ def getmodel():
 			continue
         out_dict['model'] = ' '.join([brand, model])
         return out_dict
-'''
-Gets total memory: a sum of physical and virtual memory
-'''
+
+# Gets total memory: a sum of physical and virtual memory
 def gettotalmem():
         out_dict = dict()
         try:
@@ -91,9 +87,8 @@ def getcores():
         cpuinfo.close()
         out_dict['cpuCoreCount'] = procs
         return out_dict
-'''
-Gets currently running version of Red Hat.
-'''
+
+# Gets currently running version of Red Hat.
 def getproduct():
         out_dict = dict()
         prod_proc = Popen("sed -r -e 's/.*([0-9]\\.[0-9]+).*/RHEL\\1-CLSE/' /etc/redhat-release", 
@@ -103,22 +98,20 @@ def getproduct():
                 return failure_output("Exception encountered: could not get CAEN product info")
         out_dict['product'] = product
         return out_dict
-'''
-Gets currently running CAEN version.
-Currently a year #, but keep as a string if it changes in the future.
-'''
+
+# Gets currently running CAEN version.
+# Currently a year #, but keep as a string if it changes in the future.
 def getversion():
         out_dict = dict()
         ver_proc = Popen("grep CLSE /etc/caen-release | sed -e 's/.*-//'", 
                          shell = True, stdout = PIPE)
         version = ver_proc.communicate()[0].strip()
         if (ver_proc.returncode != 0):
-                return failure_output("Exception encountered: unable to get CAEN version")
+		return failure_output("Exception encountered: unable to get CAEN version")
         out_dict['version'] = version
         return out_dict
-'''
-Gets edition of CAEN machine: research or student.
-'''
+
+# Gets edition of CAEN machine: research or student.
 def getedition():
         out_dict = dict()
         ed_proc = Popen("grep edition /etc/caen-release | sed -r -e 's/(al|)-.*//'", 
@@ -130,15 +123,12 @@ def getedition():
         out_dict['edition'] = edition
         return out_dict
 
-###############################################################################################
-# Dynamic dict entry functions, used by update_data()
-
-'''
-Gets amount of physical and virtual memory currently being used.
-Looks at /proc/meminfo, where virtual memory in use = committed memory,
-physical memory in use = total memory minus unused/free and inactive/reclaimable memory.
-More info here: https://www.centos.org/docs/5/html/5.1/Deployment_Guide/s2-proc-meminfo.html
-'''
+# Dynamic data functions
+###############################################################################
+# Gets amount of physical and virtual memory currently being used.
+# Looks at /proc/meminfo, where virtual memory in use = committed memory,
+# physical memory in use = total memory minus unused/free and inactive/reclaimable memory.
+# More info here: https://www.centos.org/docs/5/html/5.1/Deployment_Guide/s2-proc-meminfo.html
 def getmeminfo(): 
         out_dict = dict()
         try:
@@ -158,11 +148,10 @@ def getmeminfo():
         out_dict['memPhysUsed'] = total - inactive - mfree
         out_dict['memVirtUsed'] = committed
         return out_dict
-'''
-Get several lines of pagefault data from sar -B, use 5 latest lines to get average pagefaults/s. 
-If today's sar file doesn't have that many data lines, look in previous day's log to fill in the rest.
-(Especially between 12AM and 12:10AM)
-'''
+
+# Get several lines of pagefault data from sar -B, use 5 latest lines to get average pagefaults/s. 
+# If today's sar file doesn't have that many data lines, look in previous day's log to fill in the rest.
+# (Especially between 12AM and 12:10AM)
 def getpagefaults(): 
         out_dict = dict()
 	# Open today's sar log 
@@ -197,9 +186,8 @@ def getpagefaults():
 	except Exception as e:
 		return failure_output("Exception encountered: could not process sar -B output")
 	return out_dict
-'''
-Get CPU load and use percentage
-'''
+
+# Get CPU load and use percentage
 def getcpuload():
         out_dict = dict()
         try:
@@ -236,10 +224,8 @@ def getusers():
                     'userAtConsole' : (usercount > 0)}
         return out_dict 
 
-###############################################################################################
-'''
-Updates all static entries
-'''
+###############################################################################
+# Updates all static entries
 def static_data():
 	out_dict = dict()
 	out_dict['hostname'] = socket.getfqdn() 
@@ -255,9 +241,8 @@ def static_data():
 	out_dict.update(getedition())
 
 	return out_dict
-'''
-Updates all dynamic entries
-'''
+
+# Updates all dynamic entries
 def update_data():
 	out_dict = getmeminfo()
 	out_dict.update(getcpuload()) 
@@ -265,22 +250,20 @@ def update_data():
 	out_dict.update(getpagefaults())
 	out_dict['clientTimestamp'] = time.strftime('%Y-%m-%dT%H:%M:%S%z', time.gmtime())
 	return out_dict
-'''
-Prints given message if --verbose enabled
-'''
+
+# Prints given message if --verbose enabled
 def verbose_print(message):
 	if options.verbose:
 		print message
-'''
-When a function fails to gather data, print the error message to stdout (if --verbose enabled)
-and to logger, then return the "failure" dict pair
-'''
+
+# When a function fails to gather data, print the error message to stdout (if --verbose)
+# and to logger, then return the "failure" dict pair
 def failure_output(message):
 	verbose_print(message)
 	logger.debug(message)
 	return { 'success' : False }
 
-###############################################################################################
+###############################################################################
 
 if __name__ == "__main__":
 	# Process all flags
