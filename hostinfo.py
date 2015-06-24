@@ -67,8 +67,6 @@ headerfmt = { "Host name" : '%-24.24s',
               "Used Phys" : '%-9i',
               "Used Virt" : '%-9i' } 
 
-# Note: why is memPhysTotal/virt a string and memPhysUsed/virt an int?
-
 # Translation table of fields for --field. First item of each subarray is
 # the "proper" name used for the header dicts above
 validfields = [ [ "Last Report", "report", "clienttimestamp", "timestamp", "time"],
@@ -142,11 +140,6 @@ def compareTime(json1, json2):
         return 0
     return 1;
 
-# Parse host name to get its location
-def addLocation(item):
-    
-    return
-
 # Removes unneeded items from checked-in machines,
 # then gets first 10 (or all if --all) items in sorted order
 def sift(check_ins):
@@ -167,7 +160,6 @@ def sift(check_ins):
         machinelist = [item for item in machinelist if item["model"].find(options.model) != -1] 
     if options.host is not None:
         machinelist = [item for item in machinelist if item["hostname"].find(options.host) != -1]
-    #####
     # Check if machinelist is depleted by the sifting
     if len(machinelist) == 0:
         verbose_print("Warning: host list depleted by sifting. List now empty")
@@ -200,12 +192,11 @@ def getheader():
                     verbose_print("Warning: unknown formatter")
                     headerfmt[options.field] = '$-29' + formatter
                 return [ "Host name", options.field ]
+        # If field not found, print proper fields and exit
         verbose_print("Error: " + options.field + " is not a valid field name.")
-        # TODO: remove every first entry from each subarray. Also delete all ' marks?
         verbose_print("Valid strings:\n"+str(validfields).replace('],', '\n').replace('[', '').replace(']',''))
-        sys.exit()
+        sys.exit(1)
     if options.models:
-        # TODO: "Type and Model" gets combined into one. Also applies for --loc: type and model, location, disp...
         return [ "Host name", "Type", "Model", "Load", "Disp" ]
     # Default header
     return [ "Host name", "Type", "Edition", "Load", "Disp", "Last Report" ]
@@ -244,7 +235,7 @@ def recv_data(retries):
     poller.register(requester, zmq.POLLIN)
     if (retries < 0):
         verbose_print("\nError: all retries used. Exiting...")
-        sys.exit()
+        sys.exit(1)
     try:
         requester.send("")
         if poller.poll(5000): # wait up to 5 seconds
@@ -301,8 +292,9 @@ if __name__ == "__main__":
                         help="Return only hostname plus specified field <string>")
     parser.add_argument("--models", "-m", action="store_true", 
                         help="Replace last report time with models")
-    parser.add_argument("--loc", action="store_true", dest="loc",
-                        help="Replace load and last report time with location") # to implement later
+    # TODO: --loc remains unimplemented
+    #parser.add_argument("--loc", action="store_true", dest="loc",
+    #                    help="Replace load and last report time with location")
     parser.add_argument("--noheader", action="store_true",
                         help="Return data without header")
     # Arguments to modify functioning of hostinfo cmd
@@ -328,11 +320,11 @@ if __name__ == "__main__":
     if options.raw and (options.model or options.avl or options.busy or options.models or options.loc or options.field):
         verbose_print("Warning: --raw overrides --model, --models, --avl, --busy, --loc, and --field")
     # --models overrides --loc and --field flags
-    if options.models and (options.field or options.loc):
+    if options.models and (options.field): # or options.loc):
         verbose_print("Warning: --models overrides --field and --loc")
     # --loc overrides --field
-    if options.loc and options.field:
-        verbose_print("Warning: --loc overrides --field")
+    #if options.loc and options.field:
+    #    verbose_print("Warning: --loc overrides --field")
 
     # Get dict of host items
     check_ins = recv_data(options.retry)
@@ -342,34 +334,4 @@ if __name__ == "__main__":
     
     # Begin sifting and printout of data
     main(check_ins)
-
-'''
-{'clientTimestamp': '2015-06-09T20:20:22+0000', 
-'product': 'RHEL6.6-CLSE', 
-'cpuPercent': 1.3, 
-'success': True, 
-'clientVersion': '2.0', 
-'memPhysTotal': '16289712', 
-'memVirtTotal': '16336852', 
-'ip': '141.213.40.170', 
-'hostname': 'caen-sysstdp03.engin.umich.edu', 
-'pagefaultspersec': 461.44400000000007, 
-'edition': 'research', 
-'cpuCoreCount': 4, 
-'version': '2014', 
-'userAtConsole': True, 
-'memPhysUsed': 1794912, 
-'memVirtUsed': 2479808, 
-'userCount': 1, 
-'os': 'Linux', 
-'model': 'Hewlett-Packard HP Z210 Workstation', 
-'cpuLoad5': '0.02'}
-'''
-
-'''
-'clientTimestamp', 'product', 'cpuPercent', 'success', 'clientVersion', 
-'memPhysTotal', 'memVirtTotal', 'ip', 'hostname', 'pagefaultspersec', 'edition', 
-'cpuCoreCount', 'version', 'userAtConsole', 'memPhysUsed', 'memVirtUsed', 
-'userCount', 'os', 'model', 'cpuLoad5'
-'''
 
