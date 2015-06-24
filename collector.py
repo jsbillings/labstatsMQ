@@ -9,6 +9,9 @@ import signal
 logger = labstatslogger.logger
 directory = "/var/run/labstats/"
 
+'''
+Utility functions used by all others further below
+'''
 # Cleans up pidfile if --daemon, then exits
 def clean_quit():
     if options.daemon:
@@ -20,16 +23,19 @@ def verbose_print(message):
     if options.verbose:
         print message
 
+# Outputs to both logging and stdout (if --verbose enabled)
+def error_output(message):
+    logger.warning(message)
+    verbose_print(message)
+
 # If collector is killed manually, clean up and quit
 def sigterm_handler(signal, frame):
-    verbose_print("Caught a SIGTERM")
-    logger.warning("Collector killed via SIGTERM")
+    error_output("Collector caught a SIGTERM")
     clean_quit()
 
 # If SIGHUP received, do "soft restart" of sockets and files
 def sighup_handler(signal, frame):
-    verbose_print("Caught a SIGHUP")
-    logger.warning("Collector received a SIGHUP")
+    error_output("Collector caught a SIGHUP")
     context.destroy()
     time.sleep(5)
     main(options.ntries, 2000, options.tlimit)
@@ -37,6 +43,12 @@ def sighup_handler(signal, frame):
 signal.signal(signal.SIGTERM, sigterm_handler) 
 signal.signal(signal.SIGHUP, sighup_handler)
 
+'''
+Receives JSON from labstatsclient and passes it on to subscriber.
+Uses publisher-subscriber model.
+If a recv() fails, has an exponential backoff with a set # of retries
+(3 by default).
+'''
 def main(ntries, ntime, tlimit): # ntime is in milliseconds 
     # Initialize PUSH, PUB sockets 
     context = zmq.Context()
@@ -45,14 +57,12 @@ def main(ntries, ntime, tlimit): # ntime is in milliseconds
     try:
         client_collector.bind('tcp://*:5555')
     except zmq.ZMQError as e:
-        verbose_print('Error: could not connect to port 5555. '+str(e).capitalize())
-        logger.warning('Error: could not connect to port 5555. '+str(e).capitalize())
+        error_output('Error: could not connect to port 5555. '+str(e).capitalize())
         clean_quit()
     try:
         labstats_publisher.bind('tcp://*:5556')
     except zmq.ZMQError:
-        verbose_print('Error: could not connect to port 5556. '+str(e).capitalize())
-        logger.warning('Error: could not connect to port 5556. '+str(e).capitalize())
+        error_output('Error: could not connect to port 5556. '+str(e).capitalize())
         clean_quit()
     # End init sockets, begin listening for messages    
     while ntries != 0 and (tlimit < 0 or ntime <= tlimit): 
@@ -66,8 +76,7 @@ def main(ntries, ntime, tlimit): # ntime is in milliseconds
             labstats_publisher.send_json(message)
         
         except zmq.ZMQError as e:
-            verbose_print("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+str(ntries)+" tries left...")
-            logger.warning("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+str(ntries)+" tries left...")
+            error_output("Warning: ZMQ error. "+str(e).capitalize()+". Restarting with "+str(ntries)+" tries left...")
             # Exponential backoff runs here
             context.destroy()
             time.sleep(ntime / 1000)
@@ -75,18 +84,15 @@ def main(ntries, ntime, tlimit): # ntime is in milliseconds
             main(ntries - 1, ntime, tlimit)
         except (KeyboardInterrupt, SystemExit): # catches C^c, only for non-daemon mode
             verbose_print('\nQuitting collector...')
-            logger.warning("Quitting subscriber...")
             clean_quit() 
         except OSError as e:
-            verbose_print('Error: '+e.args[1]+'. Quitting...')
-            logger.warning('Error: '+e.args[1]+'. Quitting...')
+            error_output('Error: '+e.args[1]+'. Quitting...')
             clean_quit()
         except Exception as e: 
-            verbose_print("Warning: "+str(e)+".")
-            logger.warning("Warning: "+str(e)+".")
+            error_output("Warning: "+str(e)+".")
+            continue
     # Quits when all restart tries used up
-    verbose_print("Warning: too many restart tries. Quitting...")
-    logger.warning("Warning: too many restart tries. Quitting...")
+    error_output("Warning: too many restart tries. Quitting...")
     clean_quit()
 
 class collectorDaemon(Daemon):
