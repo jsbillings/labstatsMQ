@@ -12,6 +12,10 @@ directory = "/var/run/labstats/"
 timeformat = '%Y-%m-%dT%H:%M:%S'
 logger = labstatslogger.logger
 
+'''
+Utility functions used by the rest further below
+'''
+###############################################################################
 # Outputs to stdout if --verbose enabled
 def verbose_print(message):
     if options.verbose:
@@ -45,8 +49,13 @@ def sighup_handler(signal, frame):
 signal.signal(signal.SIGTERM, sigterm_handler)
 signal.signal(signal.SIGHUP, sighup_handler)
 
-# Reaper functions - check timestamps, read in/out checked-in machines, 
-##########################################################################################
+'''
+Reaper functions: check timestamps, read in/out checked-in machines.
+By default, the reaper will write out its state every recv()
+and will check that all checked-in machines are no older than 20 minutes
+(by default) every recv()
+'''
+###############################################################################
 # Verbose prints out check_ins: hostname::timestamp format
 def print_checkins(last_check, check_ins):
     verbose_print("Last check was at "+last_check.strftime(timeformat))
@@ -54,7 +63,8 @@ def print_checkins(last_check, check_ins):
     for hostname, timestamp in check_ins.iteritems():
         verbose_print(hostname+"::"+timestamp.strftime(timeformat))
 
-# Outputs pickled (last_check, check_ins) tuple. Overwrites existing checked_in file
+# Outputs pickled (last_check, check_ins) tuple. 
+# Overwrites existing checked_in file
 def output_checkins(last_check, check_ins):
     if options.output is False:
         return
@@ -70,8 +80,7 @@ def output_checkins(last_check, check_ins):
     except Exception as e:
     	error_output("Error: could not dump pickled check_in data. "+str(e))
 
-# Read from outputted checked_in file (esp. when restarted)
-# Read from pickled format, return last_check
+# Read from outputted checked_in file, return last_check and check_ins
 def read_checkins():
     if not os.path.isfile('checked_in'): # No checkins.log found
         logger.warning("No checked_in found")
@@ -86,7 +95,8 @@ def read_checkins():
     	error_output("Error: could not get last_check and check_ins. "+str(e))
         return (None, {})
 
-# Checks timestamp is within <interval> minutes' time. Returns True if timestamp outdated
+# Checks timestamp is within <interval> minutes' time. 
+# Returns True if timestamp is outdated
 def outdated(curtime, timestamp): # pass in type datetime, datetime
     verbose_print("Checking timestamp "+timestamp.strftime(timeformat)+" against current time")
     timeobj = datetime.fromtimestamp(mktime(timestamp.timetuple()))
@@ -117,8 +127,7 @@ def reap(last_check, last_recv, check_ins):
     output_checkins(last_check, new_dict)
     return (last_check, new_dict)
 
-# Subscriber functions - output datalog, receive data, 
-##########################################################################################
+###############################################################################
 # Output the json into a log file in /var/log/labstats
 def output_log(to_write):
     if not os.path.exists('/var/log/labstats/'):
@@ -154,7 +163,7 @@ def main(ntries, ntime, tlimit):
         pushsocket.connect('tcp://%s:5557' % options.server)
     except zmq.ZMQError as e:
         error_output('Error: could not connect to port 5557. '+str(e).capitalize())
-        # Don't think it would warrant quitting, though- TODO?
+    
     # Done initializing sockets, begin listening for messages
     while ntries != 0 and (tlimit < 0 or ntime <= tlimit):
         try:
@@ -171,11 +180,11 @@ def main(ntries, ntime, tlimit):
             try:
                 pushsocket.send_json(message)
                 print 'Sent message'
-            except zmq.ZMQError as e:
-                error_output("Warning: could not send data to hostinfo-client at port 5557")
+            except zmq.ZMQError:
+                error_output("Warning: could not send data to hostinfo service.")
                 # skips over without quitting/backoff here
             
-            # Output log if daemonized. Will overwrite
+            # Output log if daemonized. Will overwrite.
             if options.daemon and message['success'] is True:
                 logger.warning("Dumping JSON into logfile")
                 output_log(json.dumps(message))
@@ -198,7 +207,7 @@ def main(ntries, ntime, tlimit):
             verbose_print('\nQuitting subscriber...') 
             clean_quit()
         except OSError as e:
-            error_output('Error: '+e.args[1]+'. Quitting...')
+            error_output('Error: '+str(e)+'. Quitting...')
             clean_quit()
         except Exception as e:
             verbose_print("Warning: "+str(e)+". Line "+str(sys.exc_info()[-1].tb_lineno))
@@ -211,7 +220,7 @@ class subscriberDaemon(Daemon):
     def run(self):
         main(options.retries, 2000, options.tlimit)
 
-##########################################################################################
+###############################################################################
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
